@@ -1,0 +1,67 @@
+name: Build StreamBridge
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+      - name: Build .app
+        run: python -m PyInstaller streambridge.spec --clean --noconfirm
+      - name: Create DMG
+        run: |
+          mkdir -p dist/dmg_temp
+          cp -R dist/StreamBridge.app dist/dmg_temp/
+          ln -s /Applications dist/dmg_temp/Applications
+          hdiutil create -volname "StreamBridge" -srcfolder dist/dmg_temp -ov -format UDZO "dist/StreamBridge-Mac.dmg"
+          rm -rf dist/dmg_temp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StreamBridge-Mac
+          path: dist/StreamBridge-Mac.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+      - name: Build .exe
+        run: python -m PyInstaller streambridge_win.spec --clean --noconfirm
+      - name: Package ZIP
+        run: Compress-Archive -Path "dist\StreamBridge.exe" -DestinationPath "dist\StreamBridge-Windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StreamBridge-Windows
+          path: dist/StreamBridge-Windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            StreamBridge-Mac/StreamBridge-Mac.dmg
+            StreamBridge-Windows/StreamBridge-Windows.zip
