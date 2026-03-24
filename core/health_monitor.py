@@ -16,6 +16,7 @@ class HealthMonitor(QObject):
         silence_warning(): Silence detected beyond warning threshold
         silence_alert(): Silence detected beyond alert threshold
         silence_cleared(): Audio resumed after silence
+        auto_stop_triggered(str): Auto-stop activated (reason string)
         reconnecting(int): Auto-reconnect attempt number
         reconnect_failed(): All reconnection attempts exhausted
         log_message(str): Log entry for the event log
@@ -24,6 +25,7 @@ class HealthMonitor(QObject):
     silence_warning = pyqtSignal()
     silence_alert = pyqtSignal()
     silence_cleared = pyqtSignal()
+    auto_stop_triggered = pyqtSignal(str)
     reconnecting = pyqtSignal(int)
     reconnect_failed = pyqtSignal()
     log_message = pyqtSignal(str)
@@ -39,6 +41,15 @@ class HealthMonitor(QObject):
         self._last_audio_time: float = 0.0
         self._silence_warning_sent = False
         self._silence_alert_sent = False
+
+        # Auto-stop tracking (silence + tone detection)
+        self._silence_start_time: float = 0.0
+        self._is_silent = False
+        self._tone_start_time: float = 0.0
+        self._is_tone = False
+        self._auto_stop_fired = False
+        self._recent_levels: list[float] = []
+        self._recent_peaks: list[float] = []
 
         # Reconnection tracking
         self._reconnect_count = 0
@@ -89,6 +100,13 @@ class HealthMonitor(QObject):
         self._start_time = time.time()
         self._silence_warning_sent = False
         self._silence_alert_sent = False
+        self._auto_stop_fired = False
+        self._is_silent = False
+        self._silence_start_time = 0.0
+        self._is_tone = False
+        self._tone_start_time = 0.0
+        self._recent_levels.clear()
+        self._recent_peaks.clear()
         self._timer.start()
 
     def stop_monitoring(self) -> None:
@@ -113,13 +131,44 @@ class HealthMonitor(QObject):
     def _on_audio_levels(self, levels: AudioLevels) -> None:
         """Handle audio level updates."""
         threshold = self._config.silence.threshold_db
-        if levels.left_db > threshold or levels.right_db > threshold:
-            self._last_audio_time = time.time()
+        now = time.time()
+        has_audio = levels.left_db > threshold or levels.right_db > threshold
+
+        if has_audio:
+            self._last_audio_time = now
             if self._silence_warning_sent or self._silence_alert_sent:
                 self._silence_warning_sent = False
                 self._silence_alert_sent = False
                 self.silence_cleared.emit()
                 self.log_message.emit("Audio resumed — silence cleared")
+
+        # Track silence state for auto-stop
+        auto_stop_cfg = self._config.silence.auto_stop
+        if auto_stop_cfg.enabled:
+            if not has_audio:
+                if not self._is_silent:
+                    self._is_silent = True
+                    self._silence_start_time = now
+            else:
+                self._is_silent = False
+                self._silence_start_time = 0.0
+
+            # Tone detection: track crest factor over recent samples
+            if auto_stop_cfg.tone_detection_enabled and has_audio:
+                self._recent_levels.append(
+                    max(levels.left_db, levels.right_db)
+                )
+                self._recent_peaks.append(levels.crest_db)
+                # Keep ~2 seconds of samples (astats resets every ~23ms)
+                max_samples = 90
+                if len(self._recent_levels) > max_samples:
+                    self._recent_levels = self._recent_levels[-max_samples:]
+                    self._recent_peaks = self._recent_peaks[-max_samples:]
+            else:
+                self._recent_levels.clear()
+                self._recent_peaks.clear()
+                self._is_tone = False
+                self._tone_start_time = 0.0
 
     def _check_health(self) -> None:
         """Periodic health check (runs every second)."""
@@ -151,6 +200,53 @@ class HealthMonitor(QObject):
                 f"StreamBridge ALERT: Silence detected on {source} "
                 f"for {int(silence_duration)} seconds"
             )
+
+        # Auto-stop check (silence or tone)
+        auto_stop_cfg = self._config.silence.auto_stop
+        if auto_stop_cfg.enabled and not self._auto_stop_fired:
+            # Check silence-based auto-stop
+            if (self._is_silent
+                    and self._silence_start_time > 0
+                    and (now - self._silence_start_time) >= auto_stop_cfg.delay_s):
+                self._auto_stop_fired = True
+                reason = f"Silence detected for {auto_stop_cfg.delay_s:.0f}s"
+                self.log_message.emit(f"AUTO-STOP: {reason}")
+                self.auto_stop_triggered.emit(reason)
+                return
+
+            # Check tone-based auto-stop
+            if (auto_stop_cfg.tone_detection_enabled
+                    and len(self._recent_peaks) >= 20):
+                avg_crest = sum(self._recent_peaks) / len(self._recent_peaks)
+                # A pure tone has crest factor ~3dB; normal audio is 12-20dB
+                if avg_crest < auto_stop_cfg.tone_max_crest_db:
+                    # Check level stability (std dev of RMS levels)
+                    avg_level = sum(self._recent_levels) / len(self._recent_levels)
+                    variance = sum(
+                        (x - avg_level) ** 2 for x in self._recent_levels
+                    ) / len(self._recent_levels)
+                    std_dev = variance ** 0.5
+                    # Stable tone: std dev < 2dB
+                    if std_dev < 2.0:
+                        if not self._is_tone:
+                            self._is_tone = True
+                            self._tone_start_time = now
+                        elif (now - self._tone_start_time) >= auto_stop_cfg.delay_s:
+                            self._auto_stop_fired = True
+                            reason = (
+                                f"Signal tone detected "
+                                f"(crest={avg_crest:.1f}dB, "
+                                f"level={avg_level:.1f}dB)"
+                            )
+                            self.log_message.emit(f"AUTO-STOP: {reason}")
+                            self.auto_stop_triggered.emit(reason)
+                            return
+                    else:
+                        self._is_tone = False
+                        self._tone_start_time = 0.0
+                else:
+                    self._is_tone = False
+                    self._tone_start_time = 0.0
 
     def _attempt_reconnect(self) -> None:
         """Attempt to reconnect to the last source."""

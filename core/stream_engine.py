@@ -54,6 +54,8 @@ class StreamEngine(QObject):
         self._metadata_parsed = False
         # Accumulator for multi-line level parsing
         self._level_left: float | None = None
+        self._peak_left: float | None = None
+        self._peak_right: float | None = None
 
     @property
     def state(self) -> StreamState:
@@ -258,10 +260,31 @@ class StreamEngine(QObject):
                     self._level_left = value
                 elif channel == 2 and self._level_left is not None:
                     levels = AudioLevels(
-                        left_db=self._level_left, right_db=value
+                        left_db=self._level_left, right_db=value,
+                        left_peak_db=self._peak_left if self._peak_left is not None else self._level_left,
+                        right_peak_db=self._peak_right if hasattr(self, '_peak_right') and self._peak_right is not None else value,
                     )
                     self._level_left = None
+                    self._peak_left = None
+                    self._peak_right = None
                     self.audio_levels.emit(levels)
+
+            # Parse peak levels:
+            #   lavfi.astats.1.Peak_level=-18.0
+            #   lavfi.astats.2.Peak_level=-16.5
+            peak_match = re.search(
+                r"lavfi\.astats\.(\d+)\.Peak_level=([-\d.inf]+)", line
+            )
+            if peak_match:
+                channel = int(peak_match.group(1))
+                try:
+                    value = float(peak_match.group(2))
+                except ValueError:
+                    value = -100.0
+                if channel == 1:
+                    self._peak_left = value
+                elif channel == 2:
+                    self._peak_right = value
 
     @staticmethod
     def list_audio_devices(ffmpeg_path: str = "ffmpeg") -> list[tuple[str, str]]:

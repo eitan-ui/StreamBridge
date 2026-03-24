@@ -15,6 +15,7 @@ from core.stream_engine import StreamEngine, StreamState
 from core.http_relay import HttpRelay
 from core.health_monitor import HealthMonitor
 from core.alert_system import AlertSystem
+from core.mairlist_api import MairListAPI
 from gui.widgets.status_led import StatusLED
 from gui.widgets.level_meter import StereoLevelMeter
 from utils.audio_levels import AudioLevels, StreamMetadata
@@ -153,6 +154,7 @@ class MainWindow(QMainWindow):
             bitrate=config.mp3_bitrate,
         )
         self._alert_system = AlertSystem(config.alerts)
+        self._mairlist_api = MairListAPI(config.mairlist)
         self._health_monitor = HealthMonitor(
             self._engine, self._alert_system, config
         )
@@ -389,11 +391,15 @@ class MainWindow(QMainWindow):
         self._health_monitor.silence_warning.connect(self._on_silence_warning)
         self._health_monitor.silence_alert.connect(self._on_silence_alert)
         self._health_monitor.silence_cleared.connect(self._on_silence_cleared)
+        self._health_monitor.auto_stop_triggered.connect(self._on_auto_stop)
         self._health_monitor.reconnecting.connect(self._on_reconnecting)
         self._health_monitor.log_message.connect(self._add_log)
 
         # Alert system signals
         self._alert_system.log_message.connect(self._add_log)
+
+        # mAirList API signals
+        self._mairlist_api.log_message.connect(self._add_log)
 
     def _populate_sources(self) -> None:
         self._source_combo.blockSignals(True)
@@ -501,6 +507,7 @@ class MainWindow(QMainWindow):
             self._config.save()
             self._alert_system.update_config(self._config.alerts)
             self._health_monitor.update_config(self._config)
+            self._mairlist_api.update_config(self._config.mairlist)
             self._endpoint_label.setText(
                 f"http://localhost:{self._config.port}/stream"
             )
@@ -547,6 +554,25 @@ class MainWindow(QMainWindow):
     def _on_reconnecting(self, attempt: int) -> None:
         self._status_label.setText(f"RECONNECTING ({attempt})...")
         self._status_led.set_state("reconnecting")
+
+    # --- Auto-stop handler ---
+
+    def _on_auto_stop(self, reason: str) -> None:
+        """Handle auto-stop triggered by silence or tone detection."""
+        self._add_log(f"AUTO-STOP: {reason}")
+        self._on_stop()
+
+        # Trigger mAirList playlist if configured
+        if self._config.silence.auto_stop.trigger_mairlist:
+            self._add_log("Triggering mAirList playlist...")
+            self._mairlist_api.send_command()
+
+        # Send alert notification
+        source = self._health_monitor._last_url or self._health_monitor._last_device
+        self._alert_system.trigger_all(
+            f"StreamBridge AUTO-STOP: {reason} on {source}. "
+            f"mAirList playlist triggered."
+        )
 
     # --- Silence handlers ---
 

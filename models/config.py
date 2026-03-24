@@ -36,10 +36,27 @@ class AlertConfig:
 
 
 @dataclass
+class MairListConfig:
+    enabled: bool = False
+    api_url: str = "http://localhost:9000"
+    command: str = "PLAYLIST 1 START"
+
+
+@dataclass
+class SilenceAutoStopConfig:
+    enabled: bool = False
+    delay_s: float = 2.0
+    tone_detection_enabled: bool = False
+    tone_max_crest_db: float = 6.0
+    trigger_mairlist: bool = True
+
+
+@dataclass
 class SilenceConfig:
     threshold_db: float = -50.0
     warning_delay_s: int = 10
     alert_delay_s: int = 30
+    auto_stop: SilenceAutoStopConfig = field(default_factory=SilenceAutoStopConfig)
 
 
 @dataclass
@@ -58,6 +75,7 @@ class Config:
     silence: SilenceConfig = field(default_factory=SilenceConfig)
     reconnect: ReconnectConfig = field(default_factory=ReconnectConfig)
     alerts: AlertConfig = field(default_factory=AlertConfig)
+    mairlist: MairListConfig = field(default_factory=MairListConfig)
 
     def save(self) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -72,17 +90,23 @@ class Config:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            silence_data = data.get("silence", {})
+            auto_stop_data = silence_data.pop("auto_stop", {})
             return cls(
                 port=data.get("port", 9000),
                 audio_input_device=data.get("audio_input_device", ""),
                 mp3_bitrate=data.get("mp3_bitrate", 128),
                 ffmpeg_path=data.get("ffmpeg_path", "ffmpeg"),
-                silence=SilenceConfig(**data.get("silence", {})),
+                silence=SilenceConfig(
+                    **silence_data,
+                    auto_stop=SilenceAutoStopConfig(**auto_stop_data),
+                ),
                 reconnect=ReconnectConfig(**data.get("reconnect", {})),
                 alerts=AlertConfig(
                     sound_enabled=data.get("alerts", {}).get("sound_enabled", True),
                     whatsapp=WhatsAppConfig(**data.get("alerts", {}).get("whatsapp", {})),
                 ),
+                mairlist=MairListConfig(**data.get("mairlist", {})),
             )
         except (json.JSONDecodeError, TypeError, KeyError):
             cfg = cls()

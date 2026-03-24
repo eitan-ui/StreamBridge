@@ -6,10 +6,19 @@ from dataclasses import dataclass
 class AudioLevels:
     left_db: float = -100.0
     right_db: float = -100.0
+    left_peak_db: float = -100.0
+    right_peak_db: float = -100.0
 
     @property
     def is_silence(self) -> bool:
         return self.left_db < -50.0 and self.right_db < -50.0
+
+    @property
+    def crest_db(self) -> float:
+        """Average crest factor (peak - RMS) in dB. Low values indicate a tone."""
+        left_crest = self.left_peak_db - self.left_db if self.left_db > -90 else 99.0
+        right_crest = self.right_peak_db - self.right_db if self.right_db > -90 else 99.0
+        return (left_crest + right_crest) / 2.0
 
 
 # Patterns for parsing FFmpeg stderr output

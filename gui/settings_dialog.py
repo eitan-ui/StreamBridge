@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt
 
 from models.config import (
     Config, WhatsAppConfig, AlertConfig, SilenceConfig, ReconnectConfig,
+    SilenceAutoStopConfig, MairListConfig,
 )
 
 
@@ -120,6 +121,13 @@ class SettingsDialog(QDialog):
                 threshold_db=config.silence.threshold_db,
                 warning_delay_s=config.silence.warning_delay_s,
                 alert_delay_s=config.silence.alert_delay_s,
+                auto_stop=SilenceAutoStopConfig(
+                    enabled=config.silence.auto_stop.enabled,
+                    delay_s=config.silence.auto_stop.delay_s,
+                    tone_detection_enabled=config.silence.auto_stop.tone_detection_enabled,
+                    tone_max_crest_db=config.silence.auto_stop.tone_max_crest_db,
+                    trigger_mairlist=config.silence.auto_stop.trigger_mairlist,
+                ),
             ),
             reconnect=ReconnectConfig(
                 initial_delay_s=config.reconnect.initial_delay_s,
@@ -136,10 +144,15 @@ class SettingsDialog(QDialog):
                     custom_url=config.alerts.whatsapp.custom_url,
                 ),
             ),
+            mairlist=MairListConfig(
+                enabled=config.mairlist.enabled,
+                api_url=config.mairlist.api_url,
+                command=config.mairlist.command,
+            ),
         )
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(560, 500)
+        self.setFixedSize(560, 540)
         self.setStyleSheet(SETTINGS_STYLE)
 
         layout = QVBoxLayout(self)
@@ -152,6 +165,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._create_silence_tab(), "Silence")
         tabs.addTab(self._create_reconnect_tab(), "Reconnect")
         tabs.addTab(self._create_alerts_tab(), "Alerts")
+        tabs.addTab(self._create_mairlist_tab(), "mAirList")
         layout.addWidget(tabs)
 
         # Buttons
@@ -198,8 +212,13 @@ class SettingsDialog(QDialog):
 
     def _create_silence_tab(self) -> QWidget:
         tab = QWidget()
-        form = QFormLayout(tab)
-        form.setSpacing(12)
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+
+        # Detection thresholds
+        detect_group = QGroupBox("Detection")
+        form = QFormLayout(detect_group)
+        form.setSpacing(8)
 
         self._threshold_spin = QDoubleSpinBox()
         self._threshold_spin.setRange(-80.0, 0.0)
@@ -218,6 +237,46 @@ class SettingsDialog(QDialog):
         self._alert_spin.setSuffix(" seconds")
         self._alert_spin.setValue(self._config.silence.alert_delay_s)
         form.addRow("Alert delay:", self._alert_spin)
+
+        layout.addWidget(detect_group)
+
+        # Auto-stop settings
+        auto_group = QGroupBox("Auto-Stop & mAirList Trigger")
+        auto_form = QFormLayout(auto_group)
+        auto_form.setSpacing(8)
+
+        self._auto_stop_check = QCheckBox("Enable auto-stop on silence/tone")
+        self._auto_stop_check.setChecked(self._config.silence.auto_stop.enabled)
+        auto_form.addRow(self._auto_stop_check)
+
+        self._auto_stop_delay_spin = QDoubleSpinBox()
+        self._auto_stop_delay_spin.setRange(0.5, 30.0)
+        self._auto_stop_delay_spin.setSuffix(" seconds")
+        self._auto_stop_delay_spin.setDecimals(1)
+        self._auto_stop_delay_spin.setValue(self._config.silence.auto_stop.delay_s)
+        auto_form.addRow("Auto-stop delay:", self._auto_stop_delay_spin)
+
+        self._tone_detect_check = QCheckBox("Detect signal tones (test tone, carrier)")
+        self._tone_detect_check.setChecked(self._config.silence.auto_stop.tone_detection_enabled)
+        auto_form.addRow(self._tone_detect_check)
+
+        self._tone_crest_spin = QDoubleSpinBox()
+        self._tone_crest_spin.setRange(1.0, 20.0)
+        self._tone_crest_spin.setSuffix(" dB")
+        self._tone_crest_spin.setDecimals(1)
+        self._tone_crest_spin.setValue(self._config.silence.auto_stop.tone_max_crest_db)
+        self._tone_crest_spin.setToolTip(
+            "Max crest factor to consider as a tone. "
+            "Pure tones have ~3dB, normal audio 12-20dB."
+        )
+        auto_form.addRow("Tone crest threshold:", self._tone_crest_spin)
+
+        self._trigger_mairlist_check = QCheckBox("Trigger mAirList playlist on auto-stop")
+        self._trigger_mairlist_check.setChecked(self._config.silence.auto_stop.trigger_mairlist)
+        auto_form.addRow(self._trigger_mairlist_check)
+
+        layout.addWidget(auto_group)
+        layout.addStretch()
 
         return tab
 
@@ -291,6 +350,49 @@ class SettingsDialog(QDialog):
 
         return tab
 
+    def _create_mairlist_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+
+        ml_group = QGroupBox("mAirList Remote Control")
+        ml_form = QFormLayout(ml_group)
+        ml_form.setSpacing(8)
+
+        self._ml_enabled_check = QCheckBox("Enable mAirList integration")
+        self._ml_enabled_check.setChecked(self._config.mairlist.enabled)
+        ml_form.addRow(self._ml_enabled_check)
+
+        self._ml_api_url_input = QLineEdit(self._config.mairlist.api_url)
+        self._ml_api_url_input.setPlaceholderText("http://localhost:9000")
+        ml_form.addRow("API URL:", self._ml_api_url_input)
+
+        self._ml_command_input = QLineEdit(self._config.mairlist.command)
+        self._ml_command_input.setPlaceholderText("PLAYLIST 1 START")
+        self._ml_command_input.setToolTip(
+            "mAirList remote control command to execute.\n"
+            "Examples:\n"
+            "  PLAYLIST 1 START\n"
+            "  PLAYER A START\n"
+            "  PLAYLIST 1 NEXT"
+        )
+        ml_form.addRow("Command:", self._ml_command_input)
+
+        layout.addWidget(ml_group)
+
+        info_label = QLabel(
+            "Configure the mAirList HTTP remote control API.\n"
+            "Enable it in mAirList under Config > Remote Control > HTTP Server.\n"
+            "When auto-stop is triggered, the command above will be sent\n"
+            "to start your music playlist automatically."
+        )
+        info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+        return tab
+
     def get_config(self) -> Config:
         """Return the modified config."""
         self._config.port = self._port_spin.value()
@@ -300,6 +402,11 @@ class SettingsDialog(QDialog):
         self._config.silence.threshold_db = self._threshold_spin.value()
         self._config.silence.warning_delay_s = self._warning_spin.value()
         self._config.silence.alert_delay_s = self._alert_spin.value()
+        self._config.silence.auto_stop.enabled = self._auto_stop_check.isChecked()
+        self._config.silence.auto_stop.delay_s = self._auto_stop_delay_spin.value()
+        self._config.silence.auto_stop.tone_detection_enabled = self._tone_detect_check.isChecked()
+        self._config.silence.auto_stop.tone_max_crest_db = self._tone_crest_spin.value()
+        self._config.silence.auto_stop.trigger_mairlist = self._trigger_mairlist_check.isChecked()
 
         self._config.reconnect.initial_delay_s = self._initial_delay_spin.value()
         self._config.reconnect.max_delay_s = self._max_delay_spin.value()
@@ -311,5 +418,9 @@ class SettingsDialog(QDialog):
         self._config.alerts.whatsapp.phone = self._wa_phone_input.text().strip()
         self._config.alerts.whatsapp.api_key = self._wa_key_input.text().strip()
         self._config.alerts.whatsapp.custom_url = self._wa_custom_url_input.text().strip()
+
+        self._config.mairlist.enabled = self._ml_enabled_check.isChecked()
+        self._config.mairlist.api_url = self._ml_api_url_input.text().strip() or "http://localhost:9000"
+        self._config.mairlist.command = self._ml_command_input.text().strip()
 
         return self._config
