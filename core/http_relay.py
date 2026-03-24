@@ -156,11 +156,12 @@ class HttpRelay(QObject):
     client_count_changed = pyqtSignal(int)
 
     def __init__(self, port: int = 9000, ffmpeg_path: str = "ffmpeg",
-                 bitrate: int = 96) -> None:
+                 bitrate: int = 96, allow_remote: bool = False) -> None:
         super().__init__()
         self._port = port
         self._ffmpeg_path = ffmpeg_path
         self._bitrate = bitrate
+        self._allow_remote = allow_remote
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -170,6 +171,7 @@ class HttpRelay(QObject):
         self._encoder: AudioEncoder | None = None
         self._running = False
         self._encoder_restarts = 0
+        self._api_server = None  # Set by main_window after construction
 
     @property
     def port(self) -> int:
@@ -187,6 +189,10 @@ class HttpRelay(QObject):
         """Feed raw PCM audio data to the relay."""
         self._pcm_buffer.write(pcm_data)
 
+    @property
+    def app(self) -> web.Application | None:
+        return self._app
+
     async def start(self) -> None:
         """Start the HTTP relay server."""
         self._running = True
@@ -195,13 +201,21 @@ class HttpRelay(QObject):
         self._app.router.add_get("/stream", self._handle_stream)
         self._app.router.add_get("/status", self._handle_status)
 
+        # Register API server routes if available
+        if self._api_server:
+            self._api_server.register_routes(self._app)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        self._site = web.TCPSite(self._runner, "127.0.0.1", self._port)
+        bind_host = "0.0.0.0" if self._allow_remote else "127.0.0.1"
+        self._site = web.TCPSite(self._runner, bind_host, self._port)
 
         try:
             await self._site.start()
-            self.log_message.emit(f"Local server active on port {self._port}")
+            scope = "all interfaces" if self._allow_remote else "localhost only"
+            self.log_message.emit(
+                f"Server active on port {self._port} ({scope})"
+            )
         except OSError:
             self.log_message.emit(f"ERROR: Port {self._port} already in use")
             raise

@@ -16,6 +16,7 @@ from core.http_relay import HttpRelay
 from core.health_monitor import HealthMonitor
 from core.alert_system import AlertSystem
 from core.mairlist_api import MairListAPI
+from core.api_server import ApiServer, BonjourAdvertiser
 from gui.widgets.status_led import StatusLED
 from gui.widgets.level_meter import StereoLevelMeter
 from utils.audio_levels import AudioLevels, StreamMetadata
@@ -152,12 +153,28 @@ class MainWindow(QMainWindow):
             port=config.port,
             ffmpeg_path=config.ffmpeg_path,
             bitrate=config.mp3_bitrate,
+            allow_remote=config.api.allow_remote,
         )
         self._alert_system = AlertSystem(config.alerts)
         self._mairlist_api = MairListAPI(config.mairlist)
         self._health_monitor = HealthMonitor(
             self._engine, self._alert_system, config
         )
+
+        # API server for mobile companion app
+        self._api_server = ApiServer(config, source_manager, config.ffmpeg_path)
+        self._api_server.on_start_stream = self._api_start_stream
+        self._api_server.on_stop_stream = self._api_stop_stream
+        self._api_server.on_config_updated = self._api_config_updated
+        self._api_server.on_mairlist_command = self._mairlist_api.send_command
+        self._api_server.on_mairlist_player = self._mairlist_api.player_command
+        self._api_server.feed_relay_audio = self._relay.feed_audio
+        self._relay._api_server = self._api_server
+
+        # Bonjour/Zeroconf advertisement
+        self._bonjour = BonjourAdvertiser(config.port)
+        if config.api.allow_remote:
+            self._bonjour.start()
 
         # State
         self._is_streaming = False
@@ -407,6 +424,40 @@ class MainWindow(QMainWindow):
         # mAirList API signals
         self._mairlist_api.log_message.connect(self._add_log)
 
+        # API server broadcasting — forward signals to WebSocket clients
+        self._engine.state_changed.connect(self._api_on_state_changed)
+        self._engine.audio_levels.connect(
+            lambda levels: self._api_server.update_audio_levels(levels)
+        )
+        self._engine.metadata_ready.connect(
+            lambda meta: self._api_server.update_metadata(meta)
+        )
+        self._health_monitor.silence_warning.connect(
+            lambda: self._api_server.update_silence_status("warning")
+        )
+        self._health_monitor.silence_alert.connect(
+            lambda: self._api_server.update_silence_status("alert")
+        )
+        self._health_monitor.silence_cleared.connect(
+            lambda: self._api_server.update_silence_status("ok")
+        )
+        self._health_monitor.auto_stop_triggered.connect(
+            self._api_server.broadcast_auto_stop
+        )
+        self._relay.client_count_changed.connect(
+            self._api_server.update_client_count
+        )
+        # Forward log messages to API
+        self._engine.log_message.connect(
+            lambda msg: self._api_server.broadcast_log(msg)
+        )
+        self._health_monitor.log_message.connect(
+            lambda msg: self._api_server.broadcast_log(
+                msg, "warning" if "WARNING" in msg else
+                "error" if "ERROR" in msg else "info"
+            )
+        )
+
     def _populate_sources(self) -> None:
         self._source_combo.blockSignals(True)
         self._source_combo.clear()
@@ -614,10 +665,51 @@ class MainWindow(QMainWindow):
         self._silence_label.setStyleSheet("font-size: 10px; color: #27ae60;")
         self._status_led.set_state("connected")
 
+    # --- API server callbacks (called from REST endpoints) ---
+
+    def _api_start_stream(self, url: str, device: str) -> None:
+        """Start stream from API request."""
+        if url:
+            self._url_input.setText(url)
+        self._on_start()
+
+    def _api_stop_stream(self) -> None:
+        """Stop stream from API request."""
+        self._on_stop()
+
+    def _api_config_updated(self, config: Config) -> None:
+        """Config updated from API request."""
+        self._config = config
+        self._alert_system.update_config(config.alerts)
+        self._health_monitor.update_config(config)
+        self._mairlist_api.update_config(config.mairlist)
+        self._api_server.update_config(config)
+        self._endpoint_label.setText(
+            f"http://localhost:{config.port}/stream"
+        )
+        self._add_log("Settings updated from mobile app")
+
+    def _api_on_state_changed(self, state: StreamState) -> None:
+        """Forward stream state to API server."""
+        state_names = {
+            StreamState.IDLE: "idle",
+            StreamState.CONNECTING: "connecting",
+            StreamState.CONNECTED: "connected",
+            StreamState.RECONNECTING: "reconnecting",
+            StreamState.ERROR: "error",
+        }
+        self._api_server.update_stream_state(
+            state_names.get(state, "unknown")
+        )
+
     # --- Utilities ---
 
     def _update_uptime(self) -> None:
         self._uptime_label.setText(self._health_monitor.uptime_str)
+        self._api_server.update_uptime(
+            self._health_monitor.uptime_seconds,
+            self._health_monitor.uptime_str,
+        )
         # Update latency display
         if self._is_streaming and self._last_audio_arrival > 0:
             import time
@@ -656,5 +748,6 @@ class MainWindow(QMainWindow):
         """Clean shutdown."""
         if self._is_streaming:
             self._on_stop()
+        self._bonjour.stop()
         asyncio.ensure_future(self._relay.stop(), loop=self._loop)
         event.accept()

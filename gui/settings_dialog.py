@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt
 
 from models.config import (
     Config, WhatsAppConfig, AlertConfig, SilenceConfig, ReconnectConfig,
-    SilenceAutoStopConfig, MairListConfig,
+    SilenceAutoStopConfig, MairListConfig, ApiConfig,
 )
 
 
@@ -152,6 +152,10 @@ class SettingsDialog(QDialog):
                 silence_command=config.mairlist.silence_command,
                 tone_command=config.mairlist.tone_command,
             ),
+            api=ApiConfig(
+                token=config.api.token,
+                allow_remote=config.api.allow_remote,
+            ),
         )
 
         self.setWindowTitle("Settings")
@@ -169,6 +173,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._create_reconnect_tab(), "Reconnect")
         tabs.addTab(self._create_alerts_tab(), "Alerts")
         tabs.addTab(self._create_mairlist_tab(), "mAirList")
+        tabs.addTab(self._create_remote_tab(), "Remote")
         layout.addWidget(tabs)
 
         # Buttons
@@ -429,6 +434,76 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return tab
 
+    def _create_remote_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+
+        remote_group = QGroupBox("Remote Access (Mobile App)")
+        remote_form = QFormLayout(remote_group)
+        remote_form.setSpacing(8)
+
+        self._allow_remote_check = QCheckBox("Allow remote connections")
+        self._allow_remote_check.setChecked(self._config.api.allow_remote)
+        self._allow_remote_check.setToolTip(
+            "ON = Server listens on all network interfaces (0.0.0.0).\n"
+            "OFF = Server only listens on localhost (127.0.0.1).\n\n"
+            "Enable this to connect from the StreamBridge mobile app."
+        )
+        remote_form.addRow(self._allow_remote_check)
+
+        self._api_token_input = QLineEdit(self._config.api.token)
+        self._api_token_input.setPlaceholderText("Leave empty for no authentication")
+        self._api_token_input.setToolTip(
+            "Authentication token for the REST API.\n"
+            "The mobile app must send this token to access controls.\n"
+            "Leave empty to allow unauthenticated access (local network only)."
+        )
+        remote_form.addRow("API Token:", self._api_token_input)
+
+        # Generate token button
+        gen_btn = QPushButton("Generate Token")
+        gen_btn.clicked.connect(self._generate_token)
+        remote_form.addRow("", gen_btn)
+
+        # Show local IP
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except OSError:
+            local_ip = "127.0.0.1"
+
+        ip_label = QLabel(f"Local IP: {local_ip}:{self._config.port}")
+        ip_label.setStyleSheet("font-size: 12px; color: #3498db; font-family: 'Consolas', monospace;")
+        remote_form.addRow("Connect from app:", ip_label)
+
+        layout.addWidget(remote_group)
+
+        info_label = QLabel(
+            "The StreamBridge mobile app connects to this server\n"
+            "to control streams, monitor audio, and send mic audio.\n\n"
+            "1. Enable 'Allow remote connections'\n"
+            "2. Set a token for security (recommended)\n"
+            "3. Enter the IP and token in the mobile app\n\n"
+            "Bonjour/Zeroconf: If the zeroconf package is installed,\n"
+            "the mobile app can auto-discover this server on your network."
+        )
+        info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+        return tab
+
+    def _generate_token(self) -> None:
+        """Generate a random API token."""
+        import secrets
+        token = secrets.token_urlsafe(24)
+        self._api_token_input.setText(token)
+
     def get_config(self) -> Config:
         """Return the modified config."""
         self._config.port = self._port_spin.value()
@@ -461,5 +536,8 @@ class SettingsDialog(QDialog):
         self._config.mairlist.command = self._ml_command_input.text().strip()
         self._config.mairlist.silence_command = self._ml_silence_cmd_input.text().strip()
         self._config.mairlist.tone_command = self._ml_tone_cmd_input.text().strip()
+
+        self._config.api.token = self._api_token_input.text().strip()
+        self._config.api.allow_remote = self._allow_remote_check.isChecked()
 
         return self._config

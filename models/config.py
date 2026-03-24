@@ -70,6 +70,12 @@ class ReconnectConfig:
 
 
 @dataclass
+class ApiConfig:
+    token: str = ""             # Empty = no auth required
+    allow_remote: bool = False  # True = bind 0.0.0.0, False = 127.0.0.1 only
+
+
+@dataclass
 class Config:
     port: int = 9000
     audio_input_device: str = ""
@@ -79,6 +85,7 @@ class Config:
     reconnect: ReconnectConfig = field(default_factory=ReconnectConfig)
     alerts: AlertConfig = field(default_factory=AlertConfig)
     mairlist: MairListConfig = field(default_factory=MairListConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
 
     def save(self) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -110,6 +117,7 @@ class Config:
                     whatsapp=WhatsAppConfig(**data.get("alerts", {}).get("whatsapp", {})),
                 ),
                 mairlist=MairListConfig(**data.get("mairlist", {})),
+                api=ApiConfig(**data.get("api", {})),
             )
         except (json.JSONDecodeError, TypeError, KeyError):
             cfg = cls()
