@@ -49,12 +49,16 @@
 
     ws.onopen = () => {
       S.connected = true;
+      S.retrying = false;
       reconnectDelay = 1000;
       addLog('WebSocket connected', 'info');
+      updateConnectionBanner();
       render();
     };
     ws.onclose = () => {
       S.connected = false;
+      S.leftDb = -100; S.rightDb = -100;
+      updateConnectionBanner();
       render();
       scheduleReconnect();
     };
@@ -106,8 +110,36 @@
     if (S.log.length > 500) S.log.splice(0, S.log.length - 500);
   }
 
+  // ============ CONNECTION BANNER ============
+  function updateConnectionBanner() {
+    const banner = document.getElementById('connection-banner');
+    if (!banner) return;
+    if (S.connected) {
+      banner.style.display = 'none';
+    } else {
+      banner.style.display = 'flex';
+      document.getElementById('banner-text').textContent =
+        S.retrying ? 'Connecting to StreamBridge...' : 'No connection to StreamBridge';
+    }
+  }
+
   // ============ INIT ============
   async function init() {
+    S.retrying = false;
+    await tryConnect();
+    render();
+    showTab('dashboard');
+    // Keep checking connection every 5 seconds if disconnected
+    setInterval(() => {
+      if (!S.connected) {
+        S.retrying = true;
+        updateConnectionBanner();
+        tryConnect();
+      }
+    }, 5000);
+  }
+
+  async function tryConnect() {
     try {
       const state = await API('/state');
       S.streamState = state.stream_state;
@@ -115,22 +147,27 @@
       S.silenceStatus = state.silence_status;
       if (state.metadata) S.metadata = state.metadata.summary || '';
       S.connected = true;
+      S.retrying = false;
+      addLog('Connected to StreamBridge', 'info');
     } catch (_) {
       S.connected = false;
+      S.streamState = 'idle';
     }
 
-    try {
-      const sr = await API('/sources');
-      S.sources = sr.sources || [];
-    } catch (_) {}
+    if (S.connected) {
+      try {
+        const sr = await API('/sources');
+        S.sources = sr.sources || [];
+      } catch (_) {}
 
-    try {
-      S.config = await API('/config');
-    } catch (_) {}
+      try {
+        S.config = await API('/config');
+      } catch (_) {}
 
-    wsConnect();
+      wsConnect();
+    }
+    updateConnectionBanner();
     render();
-    showTab('dashboard');
   }
 
   // ============ RENDER ============
@@ -157,10 +194,10 @@
 
   // ============ DASHBOARD ============
   function renderDashboard() {
-    const st = S.streamState;
-    const ledCls = st === 'connected' ? 'connected' : st === 'connecting' || st === 'reconnecting' ? 'connecting' : st === 'error' ? 'error' : '';
+    const st = S.connected ? S.streamState : 'disconnected';
+    const ledCls = !S.connected ? 'error' : st === 'connected' ? 'connected' : st === 'connecting' || st === 'reconnecting' ? 'connecting' : st === 'error' ? 'error' : '';
     const silCls = S.silenceStatus;
-    const silTxt = S.silenceStatus === 'warning' ? 'Silence' : S.silenceStatus === 'alert' ? 'ALERT' : 'Audio OK';
+    const silTxt = !S.connected ? 'Offline' : S.silenceStatus === 'warning' ? 'Silence' : S.silenceStatus === 'alert' ? 'ALERT' : 'Audio OK';
     const streaming = st === 'connected';
 
     document.getElementById('dash-led').className = 'led ' + ledCls;
@@ -171,8 +208,8 @@
     document.getElementById('dash-uptime').textContent = S.uptime;
     document.getElementById('dash-meta').textContent = S.metadata;
     document.getElementById('dash-clients').textContent = S.clientCount + ' clients';
-    document.getElementById('btn-start').disabled = streaming;
-    document.getElementById('btn-stop').disabled = !streaming;
+    document.getElementById('btn-start').disabled = streaming || !S.connected;
+    document.getElementById('btn-stop').disabled = !streaming || !S.connected;
 
     // Source chips
     const chips = document.getElementById('dash-chips');

@@ -216,3 +216,32 @@ input:focus, select:focus { border-color: var(--blue); }
 
 /* --- Scrollable --- */
 .scroll-y { overflow-y: auto; max-height: 300px; }
+
+/* --- Connection Banner --- */
+.connection-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  background: linear-gradient(135deg, #1a0a0a, #2a1515);
+  border-bottom: 2px solid var(--red);
+  padding: 16px;
+  padding-top: calc(16px + var(--safe-top));
+  display: flex; align-items: center; gap: 12px;
+  animation: bannerPulse 2s ease-in-out infinite;
+}
+@keyframes bannerPulse {
+  0%, 100% { border-bottom-color: var(--red); }
+  50% { border-bottom-color: #ff6b6b; }
+}
+.banner-icon { font-size: 28px; flex-shrink: 0; }
+.banner-content { flex: 1; }
+.banner-title { font-size: 14px; font-weight: 700; color: #ff6b6b; }
+.banner-sub { font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
+.banner-spinner {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--bg3); border-top-color: var(--red);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* When banner is visible, push content down */
+body:has(.connection-banner[style*="display:flex"]) .page { padding-top: calc(90px + var(--safe-top)); }
+body:has(.connection-banner[style*="display:flex"]) .tab-bar ~ .page { padding-top: calc(90px + var(--safe-top)); }
