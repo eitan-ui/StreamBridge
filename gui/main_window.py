@@ -337,6 +337,11 @@ class MainWindow(QMainWindow):
         self._copy_btn.setFixedSize(32, 28)
         self._copy_btn.setToolTip("Copy endpoint URL")
         ep_row.addWidget(self._copy_btn)
+        self._playlist_btn = QPushButton("🎵")
+        self._playlist_btn.setObjectName("smallBtn")
+        self._playlist_btn.setFixedSize(32, 28)
+        self._playlist_btn.setToolTip("mAirList Playlist Control")
+        ep_row.addWidget(self._playlist_btn)
         endpoint_layout.addLayout(ep_row)
 
         layout.addWidget(endpoint_frame)
@@ -372,6 +377,7 @@ class MainWindow(QMainWindow):
         self._save_btn.clicked.connect(self._on_save_source)
         self._manage_btn.clicked.connect(self._on_manage_sources)
         self._settings_btn.clicked.connect(self._on_settings)
+        self._playlist_btn.clicked.connect(self._on_playlist_control)
         self._about_btn.clicked.connect(self._on_about)
         self._refresh_devices_btn.clicked.connect(self._populate_devices)
         self._source_combo.currentIndexChanged.connect(self._on_source_selected)
@@ -498,6 +504,13 @@ class MainWindow(QMainWindow):
         dialog = SourceManagerDialog(self._source_manager, self)
         dialog.exec()
         self._populate_sources()
+
+    def _on_playlist_control(self) -> None:
+        from gui.mairlist_playlist_dialog import MairListPlaylistDialog
+        dialog = MairListPlaylistDialog(
+            self._mairlist_api, self._config.mairlist, self
+        )
+        dialog.exec()
 
     def _on_settings(self) -> None:
         from gui.settings_dialog import SettingsDialog
