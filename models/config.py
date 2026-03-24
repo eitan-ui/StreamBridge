@@ -39,7 +39,7 @@ class AlertConfig:
 class MairListConfig:
     enabled: bool = False
     api_url: str = "http://localhost:9000"
-    command: str = "PLAYLIST 1 START"
+    command: str = "PLAYER A NEXT"
 
 
 @dataclass
@@ -49,6 +49,7 @@ class SilenceAutoStopConfig:
     tone_detection_enabled: bool = False
     tone_max_crest_db: float = 6.0
     trigger_mairlist: bool = True
+    stop_stream: bool = True
 
 
 @dataclass

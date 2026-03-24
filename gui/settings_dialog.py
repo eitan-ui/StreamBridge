@@ -127,6 +127,7 @@ class SettingsDialog(QDialog):
                     tone_detection_enabled=config.silence.auto_stop.tone_detection_enabled,
                     tone_max_crest_db=config.silence.auto_stop.tone_max_crest_db,
                     trigger_mairlist=config.silence.auto_stop.trigger_mairlist,
+                    stop_stream=config.silence.auto_stop.stop_stream,
                 ),
             ),
             reconnect=ReconnectConfig(
@@ -275,6 +276,16 @@ class SettingsDialog(QDialog):
         self._trigger_mairlist_check.setChecked(self._config.silence.auto_stop.trigger_mairlist)
         auto_form.addRow(self._trigger_mairlist_check)
 
+        self._stop_stream_check = QCheckBox("Stop stream after triggering")
+        self._stop_stream_check.setChecked(self._config.silence.auto_stop.stop_stream)
+        self._stop_stream_check.setToolTip(
+            "OFF = Stream keeps running (recommended for playlist workflow).\n"
+            "The silence detection resets automatically when audio resumes,\n"
+            "so it will trigger again at the next news hour.\n\n"
+            "ON = Stream stops completely after silence is detected."
+        )
+        auto_form.addRow(self._stop_stream_check)
+
         layout.addWidget(auto_group)
         layout.addStretch()
 
@@ -368,13 +379,13 @@ class SettingsDialog(QDialog):
         ml_form.addRow("API URL:", self._ml_api_url_input)
 
         self._ml_command_input = QLineEdit(self._config.mairlist.command)
-        self._ml_command_input.setPlaceholderText("PLAYLIST 1 START")
+        self._ml_command_input.setPlaceholderText("PLAYER A NEXT")
         self._ml_command_input.setToolTip(
-            "mAirList remote control command to execute.\n"
+            "mAirList remote control command to send on silence detection.\n"
             "Examples:\n"
-            "  PLAYLIST 1 START\n"
-            "  PLAYER A START\n"
-            "  PLAYLIST 1 NEXT"
+            "  PLAYER A NEXT — advance to next playlist item\n"
+            "  PLAYLIST 1 START — start playlist from current position\n"
+            "  PLAYER A STOP — stop the current player"
         )
         ml_form.addRow("Command:", self._ml_command_input)
 
@@ -383,8 +394,12 @@ class SettingsDialog(QDialog):
         info_label = QLabel(
             "Configure the mAirList HTTP remote control API.\n"
             "Enable it in mAirList under Config > Remote Control > HTTP Server.\n"
-            "When auto-stop is triggered, the command above will be sent\n"
-            "to start your music playlist automatically."
+            "When silence is detected, the command above will be sent\n"
+            "to advance to the next item in your playlist.\n\n"
+            "Common commands:\n"
+            "  PLAYER A NEXT — advance to next playlist item\n"
+            "  PLAYLIST 1 START — start playlist from current position\n"
+            "  PLAYER A STOP — stop the current player"
         )
         info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
         info_label.setWordWrap(True)
@@ -407,6 +422,7 @@ class SettingsDialog(QDialog):
         self._config.silence.auto_stop.tone_detection_enabled = self._tone_detect_check.isChecked()
         self._config.silence.auto_stop.tone_max_crest_db = self._tone_crest_spin.value()
         self._config.silence.auto_stop.trigger_mairlist = self._trigger_mairlist_check.isChecked()
+        self._config.silence.auto_stop.stop_stream = self._stop_stream_check.isChecked()
 
         self._config.reconnect.initial_delay_s = self._initial_delay_spin.value()
         self._config.reconnect.max_delay_s = self._max_delay_spin.value()

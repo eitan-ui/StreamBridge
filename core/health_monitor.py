@@ -141,6 +141,10 @@ class HealthMonitor(QObject):
                 self._silence_alert_sent = False
                 self.silence_cleared.emit()
                 self.log_message.emit("Audio resumed — silence cleared")
+            # Reset auto-stop so it can trigger again next time
+            if self._auto_stop_fired:
+                self._auto_stop_fired = False
+                self.log_message.emit("Auto-stop reset — ready for next silence event")
 
         # Track silence state for auto-stop
         auto_stop_cfg = self._config.silence.auto_stop
