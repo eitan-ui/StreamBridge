@@ -73,6 +73,17 @@ body {
 .silence-badge.ok { color: var(--green); }
 .silence-badge.warning { color: var(--yellow); }
 .silence-badge.alert { color: var(--red); font-weight: 700; }
+
+/* --- Tunnel Badge --- */
+.tunnel-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 3px 8px; border-radius: 6px;
+  margin-top: 6px; cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--bg3);
+}
+.tunnel-badge.connected { color: var(--green); border-color: var(--green); }
+.tunnel-badge.connecting { color: var(--yellow); border-color: var(--yellow); }
+.tunnel-badge.error { color: var(--red); border-color: var(--red); }
 .uptime { font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 
 /* --- Level Meters --- */

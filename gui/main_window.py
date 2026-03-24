@@ -17,6 +17,7 @@ from core.health_monitor import HealthMonitor
 from core.alert_system import AlertSystem
 from core.mairlist_api import MairListAPI
 from core.api_server import ApiServer, BonjourAdvertiser
+from core.ssh_tunnel import SSHTunnel
 from gui.widgets.status_led import StatusLED
 from gui.widgets.level_meter import StereoLevelMeter
 from utils.audio_levels import AudioLevels, StreamMetadata
@@ -176,6 +177,12 @@ class MainWindow(QMainWindow):
         if config.api.allow_remote:
             self._bonjour.start()
 
+        # SSH tunnel for internet access
+        self._tunnel = SSHTunnel(config.tunnel, config.port)
+        self._tunnel.on_status_changed = self._on_tunnel_status
+        self._api_server.on_tunnel_start = self._tunnel_start
+        self._api_server.on_tunnel_stop = self._tunnel_stop
+
         # State
         self._is_streaming = False
         self._current_metadata: StreamMetadata | None = None
@@ -188,6 +195,10 @@ class MainWindow(QMainWindow):
 
         # Start the HTTP relay server
         asyncio.ensure_future(self._relay.start(), loop=self._loop)
+
+        # Start SSH tunnel if configured
+        if config.tunnel.enabled:
+            asyncio.ensure_future(self._tunnel.start(), loop=self._loop)
 
         # Uptime + latency update timer
         self._uptime_timer = QTimer(self)
@@ -575,6 +586,11 @@ class MainWindow(QMainWindow):
             self._endpoint_label.setText(
                 f"http://localhost:{self._config.port}/stream"
             )
+            # Restart tunnel if config changed
+            self._tunnel.update_config(self._config.tunnel)
+            asyncio.ensure_future(self._tunnel.stop(), loop=self._loop)
+            if self._config.tunnel.enabled:
+                asyncio.ensure_future(self._tunnel.start(), loop=self._loop)
             self._add_log("Settings updated")
 
     # --- Engine signal handlers ---
@@ -687,7 +703,33 @@ class MainWindow(QMainWindow):
         self._endpoint_label.setText(
             f"http://localhost:{config.port}/stream"
         )
+        # Restart tunnel if config changed
+        self._tunnel.update_config(config.tunnel)
+        asyncio.ensure_future(self._tunnel.stop(), loop=self._loop)
+        if config.tunnel.enabled:
+            asyncio.ensure_future(self._tunnel.start(), loop=self._loop)
         self._add_log("Settings updated from mobile app")
+
+    # --- SSH Tunnel callbacks ---
+
+    def _on_tunnel_status(self, status: str, error: str, public_url: str) -> None:
+        """Handle tunnel status changes."""
+        self._api_server.update_tunnel_status(status, error, public_url)
+        if status == "connected":
+            self._add_log(f"SSH tunnel connected: {public_url}")
+        elif status == "error" and error:
+            self._add_log(f"SSH tunnel error: {error}")
+        elif status == "disconnected":
+            self._add_log("SSH tunnel disconnected")
+
+    def _tunnel_start(self) -> None:
+        """Start tunnel from API request."""
+        if self._tunnel.status != "connected":
+            asyncio.ensure_future(self._tunnel.start(), loop=self._loop)
+
+    def _tunnel_stop(self) -> None:
+        """Stop tunnel from API request."""
+        asyncio.ensure_future(self._tunnel.stop(), loop=self._loop)
 
     def _api_on_state_changed(self, state: StreamState) -> None:
         """Forward stream state to API server."""
@@ -749,5 +791,6 @@ class MainWindow(QMainWindow):
         if self._is_streaming:
             self._on_stop()
         self._bonjour.stop()
+        asyncio.ensure_future(self._tunnel.stop(), loop=self._loop)
         asyncio.ensure_future(self._relay.stop(), loop=self._loop)
         event.accept()

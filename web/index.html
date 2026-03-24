@@ -33,6 +33,10 @@
       <span id="dash-silence" class="silence-badge ok">Audio OK</span>
       <span id="dash-uptime" class="uptime"></span>
     </div>
+    <div id="tunnel-badge" class="tunnel-badge" style="display:none" onclick="sbCopyTunnelUrl()">
+      <span id="tunnel-badge-icon"></span>
+      <span id="tunnel-badge-text"></span>
+    </div>
   </div>
 
   <!-- Levels -->
@@ -206,6 +210,27 @@
       <input id="set-ml-silence-cmd" type="text" style="margin-bottom:8px">
       <div class="setting-row"><span class="setting-label">Tone Command</span></div>
       <input id="set-ml-tone-cmd" type="text">
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <div class="setting-group-title">Internet Tunnel (SSH)</div>
+    <div class="card">
+      <div class="setting-row"><span class="setting-label">Enable</span><button id="set-tunnel-enabled" class="toggle" onclick="sbToggleSetting('set-tunnel-enabled','tunnel.enabled')"></button></div>
+      <div class="setting-row"><span class="setting-label">VPS Host</span></div>
+      <input id="set-tunnel-host" type="text" placeholder="e.g. 203.0.113.5" style="margin-bottom:8px">
+      <div class="setting-row"><span class="setting-label">SSH Port</span><input id="set-tunnel-port" type="number" style="width:80px;text-align:right" value="22"></div>
+      <div class="setting-row"><span class="setting-label">Username</span></div>
+      <input id="set-tunnel-user" type="text" placeholder="e.g. root" style="margin-bottom:8px">
+      <div class="setting-row"><span class="setting-label">Remote Port</span><input id="set-tunnel-remote-port" type="number" style="width:80px;text-align:right" value="9000"></div>
+      <div id="tunnel-status-row" class="setting-row" style="display:none">
+        <span class="setting-label">Status</span>
+        <span id="set-tunnel-status" style="font-size:12px"></span>
+      </div>
+      <div class="btn-row" style="margin-top:8px;gap:8px">
+        <button class="btn-sm" onclick="sbTunnelStart()">Start</button>
+        <button class="btn-sm" onclick="sbTunnelStop()">Stop</button>
+      </div>
     </div>
   </div>
 

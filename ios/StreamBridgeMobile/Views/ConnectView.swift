@@ -219,6 +219,11 @@ struct ConnectView: View {
                 appState.streamState = state.streamState
                 appState.isStreaming = state.isStreaming
                 appState.clientCount = state.clientCount
+                if let tunnel = state.tunnel {
+                    appState.tunnelStatus = tunnel.status
+                    appState.tunnelError = tunnel.error
+                    appState.tunnelPublicURL = tunnel.publicUrl
+                }
 
                 // Connect WebSocket
                 wsManager.connect(baseURL: baseURL, token: token)

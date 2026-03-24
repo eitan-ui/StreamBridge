@@ -144,6 +144,9 @@ class ApiServer:
         self._uptime_seconds: float = 0.0
         self._is_streaming: bool = False
         self._client_count: int = 0
+        self._tunnel_status: str = "disconnected"
+        self._tunnel_error: str = ""
+        self._tunnel_url: str = ""
 
         # Callbacks set by main_window to trigger actions
         self.on_start_stream = None   # callable(url, device)
@@ -155,6 +158,10 @@ class ApiServer:
 
         # Relay feed callback set by main_window
         self.feed_relay_audio = None  # callable(bytes) — feeds PCM to HttpRelay
+
+        # Tunnel callbacks
+        self.on_tunnel_start = None   # callable()
+        self.on_tunnel_stop = None    # callable()
 
     def update_config(self, config: Config) -> None:
         self._config = config
@@ -177,6 +184,8 @@ class ApiServer:
         app.router.add_post("/api/v1/alerts/test", self._handle_alerts_test)
         app.router.add_post("/api/v1/mic/start", self._handle_mic_start)
         app.router.add_post("/api/v1/mic/stop", self._handle_mic_stop)
+        app.router.add_post("/api/v1/tunnel/start", self._handle_tunnel_start)
+        app.router.add_post("/api/v1/tunnel/stop", self._handle_tunnel_stop)
 
         # WebSocket
         app.router.add_get("/api/v1/ws", self._handle_ws)
@@ -263,6 +272,17 @@ class ApiServer:
         self._client_count = count
         self._broadcast({"type": "client_count", "count": count})
 
+    def update_tunnel_status(self, status: str, error: str, public_url: str) -> None:
+        self._tunnel_status = status
+        self._tunnel_error = error
+        self._tunnel_url = public_url
+        self._broadcast({
+            "type": "tunnel_status",
+            "status": status,
+            "error": error or None,
+            "public_url": public_url or None,
+        })
+
     def broadcast_log(self, message: str, level: str = "info") -> None:
         self._broadcast({"type": "log", "message": message, "level": level})
 
@@ -331,6 +351,11 @@ class ApiServer:
             "client_count": self._client_count,
             "mic_active": self._mic_receiver.active,
             "mic_mode": self._mic_receiver.mode,
+            "tunnel": {
+                "status": self._tunnel_status,
+                "error": self._tunnel_error or None,
+                "public_url": self._tunnel_url or None,
+            },
         })
 
     async def _handle_stream_start(self, request: web.Request) -> web.Response:
@@ -570,6 +595,22 @@ class ApiServer:
         self._mic_receiver.stop()
         self.broadcast_log("Mic receiver stopped", "info")
         return web.json_response({"status": "stopped"})
+
+    # ------------------------------------------------------------------
+    # Tunnel endpoints
+    # ------------------------------------------------------------------
+
+    async def _handle_tunnel_start(self, request: web.Request) -> web.Response:
+        """POST /api/v1/tunnel/start — Start SSH tunnel."""
+        if self.on_tunnel_start:
+            self.on_tunnel_start()
+        return web.json_response({"status": "starting"})
+
+    async def _handle_tunnel_stop(self, request: web.Request) -> web.Response:
+        """POST /api/v1/tunnel/stop — Stop SSH tunnel."""
+        if self.on_tunnel_stop:
+            self.on_tunnel_stop()
+        return web.json_response({"status": "stopping"})
 
     # ------------------------------------------------------------------
     # WebSocket handler

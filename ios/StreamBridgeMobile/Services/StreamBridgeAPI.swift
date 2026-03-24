@@ -98,6 +98,16 @@ class StreamBridgeAPI: ObservableObject {
         let _: StatusResponse = try await post("/api/v1/mic/stop", body: [:] as [String: String])
     }
 
+    // MARK: - Tunnel
+
+    func tunnelStart() async throws {
+        let _: StatusResponse = try await post("/api/v1/tunnel/start", body: [:] as [String: String])
+    }
+
+    func tunnelStop() async throws {
+        let _: StatusResponse = try await post("/api/v1/tunnel/stop", body: [:] as [String: String])
+    }
+
     // MARK: - HTTP Helpers
 
     private func makeRequest(_ path: String, method: String) -> URLRequest {
@@ -164,6 +174,17 @@ class StreamBridgeAPI: ObservableObject {
 
 // MARK: - Response Types
 
+struct TunnelStatusResponse: Codable {
+    let status: String
+    let error: String?
+    let publicUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, error
+        case publicUrl = "public_url"
+    }
+}
+
 struct AppStateResponse: Codable {
     let streamState: String
     let isStreaming: Bool
@@ -174,13 +195,14 @@ struct AppStateResponse: Codable {
     let clientCount: Int
     let micActive: Bool
     let micMode: String
+    let tunnel: TunnelStatusResponse?
 
     enum CodingKeys: String, CodingKey {
         case streamState = "stream_state"
         case isStreaming = "is_streaming"
         case audioLevels = "audio_levels"
         case silenceStatus = "silence_status"
-        case metadata
+        case metadata, tunnel
         case uptimeSeconds = "uptime_seconds"
         case clientCount = "client_count"
         case micActive = "mic_active"

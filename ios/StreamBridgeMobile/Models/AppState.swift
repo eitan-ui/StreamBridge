@@ -39,6 +39,11 @@ class AppState: ObservableObject {
     @Published var micActive: Bool = false
     @Published var micMode: String = ""  // talkback, source
 
+    // Tunnel
+    @Published var tunnelStatus: String = "disconnected"
+    @Published var tunnelError: String? = nil
+    @Published var tunnelPublicURL: String? = nil
+
     // Log entries
     @Published var logEntries: [LogEntry] = []
 

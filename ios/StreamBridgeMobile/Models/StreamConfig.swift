@@ -10,13 +10,14 @@ struct StreamConfig: Codable {
     var alerts: AlertConfig = AlertConfig()
     var mairlist: MairListConfig = MairListConfig()
     var api: ApiConfig = ApiConfig()
+    var tunnel: TunnelConfig = TunnelConfig()
 
     enum CodingKeys: String, CodingKey {
         case port
         case audioInputDevice = "audio_input_device"
         case mp3Bitrate = "mp3_bitrate"
         case ffmpegPath = "ffmpeg_path"
-        case silence, reconnect, alerts, mairlist, api
+        case silence, reconnect, alerts, mairlist, api, tunnel
     }
 }
 
@@ -109,5 +110,20 @@ struct ApiConfig: Codable {
 
     enum CodingKeys: String, CodingKey {
         case allowRemote = "allow_remote"
+    }
+}
+
+struct TunnelConfig: Codable {
+    var enabled: Bool = false
+    var host: String = ""
+    var port: Int = 22
+    var username: String = ""
+    var keyPath: String = ""
+    var remotePort: Int = 9000
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, host, port, username
+        case keyPath = "key_path"
+        case remotePort = "remote_port"
     }
 }

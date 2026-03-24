@@ -14,6 +14,11 @@ struct DashboardView: View {
                     // Status card
                     statusCard
 
+                    // Tunnel badge
+                    if appState.tunnelStatus != "disconnected" {
+                        tunnelBadge
+                    }
+
                     // Level meters
                     LevelMeterView(
                         leftDb: appState.leftDb,
@@ -120,6 +125,67 @@ struct DashboardView: View {
         case "warning": return "Silence"
         case "alert": return "ALERT"
         default: return "Audio OK"
+        }
+    }
+
+    // MARK: - Tunnel Badge
+
+    private var tunnelBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: tunnelIcon)
+                .foregroundStyle(tunnelColor)
+            Text(tunnelText)
+                .font(.caption)
+                .foregroundStyle(tunnelColor)
+            Spacer()
+            if let url = appState.tunnelPublicURL, !url.isEmpty {
+                Button {
+                    UIPasteboard.general.string = url
+                    appState.addLog("Tunnel URL copied", level: "info")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(tunnelColor.opacity(0.1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(tunnelColor.opacity(0.3), lineWidth: 1)
+        )
+        .cornerRadius(8)
+    }
+
+    private var tunnelColor: Color {
+        switch appState.tunnelStatus {
+        case "connected": return .green
+        case "connecting": return .yellow
+        case "error": return .red
+        default: return .gray
+        }
+    }
+
+    private var tunnelIcon: String {
+        switch appState.tunnelStatus {
+        case "connected": return "checkmark.shield.fill"
+        case "connecting": return "arrow.triangle.2.circlepath"
+        case "error": return "exclamationmark.triangle.fill"
+        default: return "globe"
+        }
+    }
+
+    private var tunnelText: String {
+        switch appState.tunnelStatus {
+        case "connected":
+            return "Tunnel: \(appState.tunnelPublicURL ?? "Connected")"
+        case "connecting":
+            return "Tunnel connecting..."
+        case "error":
+            return "Tunnel error: \(appState.tunnelError ?? "")"
+        default:
+            return "Tunnel offline"
         }
     }
 

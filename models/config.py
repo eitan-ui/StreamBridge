@@ -70,6 +70,16 @@ class ReconnectConfig:
 
 
 @dataclass
+class TunnelConfig:
+    enabled: bool = False
+    host: str = ""              # VPS IP or hostname
+    port: int = 22              # SSH port
+    username: str = ""          # SSH username
+    key_path: str = ""          # Path to SSH private key
+    remote_port: int = 9000     # Port on VPS that maps back to local
+
+
+@dataclass
 class ApiConfig:
     token: str = ""             # Empty = no auth required
     allow_remote: bool = False  # True = bind 0.0.0.0, False = 127.0.0.1 only
@@ -86,6 +96,7 @@ class Config:
     alerts: AlertConfig = field(default_factory=AlertConfig)
     mairlist: MairListConfig = field(default_factory=MairListConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    tunnel: TunnelConfig = field(default_factory=TunnelConfig)
 
     def save(self) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -118,6 +129,7 @@ class Config:
                 ),
                 mairlist=MairListConfig(**data.get("mairlist", {})),
                 api=ApiConfig(**data.get("api", {})),
+                tunnel=TunnelConfig(**data.get("tunnel", {})),
             )
         except (json.JSONDecodeError, TypeError, KeyError):
             cfg = cls()

@@ -21,6 +21,7 @@ struct SettingsView: View {
                         alertsSection(config)
                         whatsappSection(config)
                         mairlistSection(config)
+                        tunnelSection(config)
 
                         Section {
                             Button {
@@ -213,6 +214,76 @@ struct SettingsView: View {
         }
     }
 
+    private func tunnelSection(_ config: Binding<StreamConfig>) -> some View {
+        Section("Internet Tunnel (SSH)") {
+            Toggle("Enable Tunnel", isOn: config.tunnel.enabled)
+            if config.tunnel.enabled.wrappedValue {
+                HStack {
+                    Text("VPS Host")
+                    Spacer()
+                    TextField("203.0.113.5", text: config.tunnel.host)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                }
+                HStack {
+                    Text("SSH Port")
+                    Spacer()
+                    TextField("22", value: config.tunnel.port, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("Username")
+                    Spacer()
+                    TextField("root", text: config.tunnel.username)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                }
+                HStack {
+                    Text("Remote Port")
+                    Spacer()
+                    TextField("9000", value: config.tunnel.remotePort, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+            }
+
+            // Tunnel status
+            if appState.tunnelStatus != "disconnected" {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Text(appState.tunnelStatus.uppercased())
+                        .foregroundStyle(appState.tunnelStatus == "connected" ? .green :
+                                        appState.tunnelStatus == "connecting" ? .yellow : .red)
+                        .font(.caption.bold())
+                }
+                if let url = appState.tunnelPublicURL, !url.isEmpty {
+                    HStack {
+                        Text("Public URL")
+                        Spacer()
+                        Text(url)
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Start") {
+                    Task { try? await api.tunnelStart() }
+                }
+                Spacer()
+                Button("Stop") {
+                    Task { try? await api.tunnelStop() }
+                }
+                .foregroundStyle(.red)
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func loadConfig() {
@@ -263,6 +334,14 @@ struct SettingsView: View {
                         "command": cfg.mairlist.command,
                         "silence_command": cfg.mairlist.silenceCommand,
                         "tone_command": cfg.mairlist.toneCommand,
+                    ],
+                    "tunnel": [
+                        "enabled": cfg.tunnel.enabled,
+                        "host": cfg.tunnel.host,
+                        "port": cfg.tunnel.port,
+                        "username": cfg.tunnel.username,
+                        "key_path": cfg.tunnel.keyPath,
+                        "remote_port": cfg.tunnel.remotePort,
                     ],
                 ]
                 try await api.updateConfig(updates)

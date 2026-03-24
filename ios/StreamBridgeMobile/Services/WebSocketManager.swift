@@ -132,6 +132,11 @@ class WebSocketManager: ObservableObject {
             let reason = json["reason"] as? String ?? ""
             state.addLog("AUTO-STOP (\(detType)): \(reason)", level: "warning")
 
+        case "tunnel_status":
+            state.tunnelStatus = json["status"] as? String ?? "disconnected"
+            state.tunnelError = json["error"] as? String
+            state.tunnelPublicURL = json["public_url"] as? String
+
         default:
             break
         }

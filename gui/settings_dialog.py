@@ -2,12 +2,13 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QGroupBox, QFormLayout, QTabWidget, QWidget,
+    QFileDialog, QTextEdit, QMessageBox,
 )
 from PyQt6.QtCore import Qt
 
 from models.config import (
     Config, WhatsAppConfig, AlertConfig, SilenceConfig, ReconnectConfig,
-    SilenceAutoStopConfig, MairListConfig, ApiConfig,
+    SilenceAutoStopConfig, MairListConfig, ApiConfig, TunnelConfig,
 )
 
 
@@ -482,14 +483,86 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(remote_group)
 
+        # --- Internet Tunnel (SSH) ---
+        tunnel_group = QGroupBox("Internet Tunnel (SSH)")
+        tunnel_form = QFormLayout(tunnel_group)
+        tunnel_form.setSpacing(8)
+
+        self._tunnel_enabled_check = QCheckBox("Enable SSH tunnel")
+        self._tunnel_enabled_check.setChecked(self._config.tunnel.enabled)
+        self._tunnel_enabled_check.setToolTip(
+            "Automatically open an SSH reverse tunnel to your VPS\n"
+            "so the PWA is accessible from the internet."
+        )
+        tunnel_form.addRow(self._tunnel_enabled_check)
+
+        self._tunnel_host_input = QLineEdit(self._config.tunnel.host)
+        self._tunnel_host_input.setPlaceholderText("e.g. 203.0.113.5 or my-vps.com")
+        tunnel_form.addRow("VPS Host:", self._tunnel_host_input)
+
+        self._tunnel_port_spin = QSpinBox()
+        self._tunnel_port_spin.setRange(1, 65535)
+        self._tunnel_port_spin.setValue(self._config.tunnel.port)
+        tunnel_form.addRow("SSH Port:", self._tunnel_port_spin)
+
+        self._tunnel_user_input = QLineEdit(self._config.tunnel.username)
+        self._tunnel_user_input.setPlaceholderText("e.g. root")
+        tunnel_form.addRow("Username:", self._tunnel_user_input)
+
+        # SSH Key path + browse
+        key_row = QHBoxLayout()
+        self._tunnel_key_input = QLineEdit(self._config.tunnel.key_path)
+        self._tunnel_key_input.setPlaceholderText("Path to SSH private key")
+        key_row.addWidget(self._tunnel_key_input)
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self._browse_ssh_key)
+        key_row.addWidget(browse_btn)
+        tunnel_form.addRow("SSH Key:", key_row)
+
+        # Generate key pair button
+        gen_key_btn = QPushButton("Generate Key Pair")
+        gen_key_btn.setToolTip("Generate a new ed25519 SSH key pair for StreamBridge")
+        gen_key_btn.clicked.connect(self._generate_ssh_key)
+        tunnel_form.addRow("", gen_key_btn)
+
+        # Public key display (hidden until generated)
+        self._pubkey_display = QTextEdit()
+        self._pubkey_display.setReadOnly(True)
+        self._pubkey_display.setMaximumHeight(60)
+        self._pubkey_display.setStyleSheet(
+            "font-size: 10px; font-family: 'Consolas', monospace; "
+            "background-color: #16213e; border: 1px solid #0f3460;"
+        )
+        self._pubkey_display.setPlaceholderText(
+            "Click 'Generate Key Pair' to create a new key, "
+            "then copy the public key to your VPS."
+        )
+        # Show existing public key if available
+        import os
+        from models.config import APP_DATA_DIR
+        pubkey_path = os.path.join(APP_DATA_DIR, "ssh", "streambridge_key.pub")
+        if os.path.exists(pubkey_path):
+            with open(pubkey_path, "r") as f:
+                self._pubkey_display.setPlainText(f.read().strip())
+        tunnel_form.addRow("Public Key:", self._pubkey_display)
+
+        self._tunnel_remote_port_spin = QSpinBox()
+        self._tunnel_remote_port_spin.setRange(1, 65535)
+        self._tunnel_remote_port_spin.setValue(self._config.tunnel.remote_port)
+        tunnel_form.addRow("Remote Port:", self._tunnel_remote_port_spin)
+
+        layout.addWidget(tunnel_group)
+
+        # Setup instructions
         info_label = QLabel(
-            "The StreamBridge mobile app connects to this server\n"
-            "to control streams, monitor audio, and send mic audio.\n\n"
-            "1. Enable 'Allow remote connections'\n"
-            "2. Set a token for security (recommended)\n"
-            "3. Enter the IP and token in the mobile app\n\n"
-            "Bonjour/Zeroconf: If the zeroconf package is installed,\n"
-            "the mobile app can auto-discover this server on your network."
+            "LAN: Enable 'Allow remote connections' + set a token.\n"
+            "Internet: Configure the SSH tunnel to your VPS.\n\n"
+            "VPS setup:\n"
+            "1. Add 'GatewayPorts yes' to /etc/ssh/sshd_config\n"
+            "2. Restart sshd: sudo systemctl restart sshd\n"
+            "3. Generate a key pair above and copy the public key to\n"
+            "   ~/.ssh/authorized_keys on your VPS\n"
+            "4. Enter your VPS details and enable the tunnel"
         )
         info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
         info_label.setWordWrap(True)
@@ -503,6 +576,34 @@ class SettingsDialog(QDialog):
         import secrets
         token = secrets.token_urlsafe(24)
         self._api_token_input.setText(token)
+
+    def _browse_ssh_key(self) -> None:
+        """Open file dialog to select an SSH private key."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select SSH Private Key", "",
+            "All Files (*)"
+        )
+        if path:
+            self._tunnel_key_input.setText(path)
+
+    def _generate_ssh_key(self) -> None:
+        """Generate an ed25519 SSH key pair."""
+        try:
+            from core.ssh_tunnel import SSHTunnel
+            private_path, public_text = SSHTunnel.generate_key_pair()
+            self._tunnel_key_input.setText(private_path)
+            self._pubkey_display.setPlainText(public_text)
+            QMessageBox.information(
+                self, "Key Generated",
+                "SSH key pair generated successfully.\n\n"
+                "Copy the public key shown below and add it to\n"
+                "~/.ssh/authorized_keys on your VPS."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error",
+                f"Failed to generate SSH key:\n{e}"
+            )
 
     def get_config(self) -> Config:
         """Return the modified config."""
@@ -539,5 +640,12 @@ class SettingsDialog(QDialog):
 
         self._config.api.token = self._api_token_input.text().strip()
         self._config.api.allow_remote = self._allow_remote_check.isChecked()
+
+        self._config.tunnel.enabled = self._tunnel_enabled_check.isChecked()
+        self._config.tunnel.host = self._tunnel_host_input.text().strip()
+        self._config.tunnel.port = self._tunnel_port_spin.value()
+        self._config.tunnel.username = self._tunnel_user_input.text().strip()
+        self._config.tunnel.key_path = self._tunnel_key_input.text().strip()
+        self._config.tunnel.remote_port = self._tunnel_remote_port_spin.value()
 
         return self._config

@@ -21,6 +21,7 @@
     selectedPlaylist: 1,
     micModeTab: 'talkback',
     logFilter: 'all',
+    tunnel: { status: 'disconnected', error: null, public_url: null },
   };
 
   let ws = null;
@@ -98,6 +99,8 @@
         addLog(m.message, m.level || 'info'); break;
       case 'auto_stop':
         addLog('AUTO-STOP (' + m.detection_type + '): ' + m.reason, 'warning'); break;
+      case 'tunnel_status':
+        S.tunnel = { status: m.status, error: m.error, public_url: m.public_url }; break;
       default: return;
     }
     render();
@@ -146,6 +149,7 @@
       S.clientCount = state.client_count;
       S.silenceStatus = state.silence_status;
       if (state.metadata) S.metadata = state.metadata.summary || '';
+      if (state.tunnel) S.tunnel = state.tunnel;
       S.connected = true;
       S.retrying = false;
       addLog('Connected to StreamBridge', 'info');
@@ -210,6 +214,28 @@
     document.getElementById('dash-clients').textContent = S.clientCount + ' clients';
     document.getElementById('btn-start').disabled = streaming || !S.connected;
     document.getElementById('btn-stop').disabled = !streaming || !S.connected;
+
+    // Tunnel badge
+    const tBadge = document.getElementById('tunnel-badge');
+    if (S.tunnel.status === 'connected' && S.tunnel.public_url) {
+      tBadge.style.display = 'flex';
+      tBadge.className = 'tunnel-badge connected';
+      document.getElementById('tunnel-badge-icon').textContent = '\u2713';
+      document.getElementById('tunnel-badge-text').textContent = S.tunnel.public_url;
+    } else if (S.tunnel.status === 'connecting') {
+      tBadge.style.display = 'flex';
+      tBadge.className = 'tunnel-badge connecting';
+      document.getElementById('tunnel-badge-icon').textContent = '\u21BB';
+      document.getElementById('tunnel-badge-text').textContent = 'Tunnel connecting...';
+    } else if (S.tunnel.status === 'error') {
+      tBadge.style.display = 'flex';
+      tBadge.className = 'tunnel-badge error';
+      document.getElementById('tunnel-badge-icon').textContent = '\u2717';
+      document.getElementById('tunnel-badge-text').textContent = 'Tunnel error';
+      tBadge.title = S.tunnel.error || '';
+    } else {
+      tBadge.style.display = 'none';
+    }
 
     // Source chips
     const chips = document.getElementById('dash-chips');
@@ -437,6 +463,23 @@
     document.getElementById('set-ml-cmd').value = c.mairlist?.command ?? '';
     document.getElementById('set-ml-silence-cmd').value = c.mairlist?.silence_command ?? '';
     document.getElementById('set-ml-tone-cmd').value = c.mairlist?.tone_command ?? '';
+    // Tunnel
+    document.getElementById('set-tunnel-enabled').className = 'toggle' + (c.tunnel?.enabled ? ' on' : '');
+    document.getElementById('set-tunnel-host').value = c.tunnel?.host ?? '';
+    document.getElementById('set-tunnel-port').value = c.tunnel?.port ?? 22;
+    document.getElementById('set-tunnel-user').value = c.tunnel?.username ?? '';
+    document.getElementById('set-tunnel-remote-port').value = c.tunnel?.remote_port ?? 9000;
+    // Tunnel status
+    const tRow = document.getElementById('tunnel-status-row');
+    const tLabel = document.getElementById('set-tunnel-status');
+    if (S.tunnel.status !== 'disconnected') {
+      tRow.style.display = 'flex';
+      const colors = { connected: 'var(--green)', connecting: 'var(--yellow)', error: 'var(--red)' };
+      tLabel.style.color = colors[S.tunnel.status] || 'var(--text2)';
+      tLabel.textContent = S.tunnel.status.toUpperCase() + (S.tunnel.public_url ? ' - ' + S.tunnel.public_url : '');
+    } else {
+      tRow.style.display = 'none';
+    }
   }
 
   function toggleSetting(id, path) {
@@ -473,6 +516,14 @@
         silence_command: document.getElementById('set-ml-silence-cmd').value,
         tone_command: document.getElementById('set-ml-tone-cmd').value,
       },
+      tunnel: {
+        enabled: c.tunnel?.enabled ?? false,
+        host: document.getElementById('set-tunnel-host').value,
+        port: parseInt(document.getElementById('set-tunnel-port').value) || 22,
+        username: document.getElementById('set-tunnel-user').value,
+        key_path: c.tunnel?.key_path ?? '',
+        remote_port: parseInt(document.getElementById('set-tunnel-remote-port').value) || 9000,
+      },
     };
     try {
       await API('/config', { method: 'PUT', body: JSON.stringify(body) });
@@ -482,6 +533,23 @@
       addLog('Save failed: ' + err.message, 'error');
     }
     render();
+  }
+
+  // ============ TUNNEL ============
+  function tunnelStart() {
+    API('/tunnel/start', { method: 'POST', body: JSON.stringify({}) });
+    addLog('Tunnel start requested', 'info');
+  }
+  function tunnelStop() {
+    API('/tunnel/stop', { method: 'POST', body: JSON.stringify({}) });
+    addLog('Tunnel stop requested', 'info');
+  }
+  function copyTunnelUrl() {
+    if (S.tunnel.public_url) {
+      navigator.clipboard.writeText(S.tunnel.public_url).then(() => {
+        addLog('Tunnel URL copied to clipboard', 'info');
+      }).catch(() => {});
+    }
   }
 
   // ============ HELPERS ============
@@ -504,6 +572,9 @@
   window.sbLogSetFilter = logSetFilter;
   window.sbToggleSetting = toggleSetting;
   window.sbSaveSettings = saveSettings;
+  window.sbTunnelStart = tunnelStart;
+  window.sbTunnelStop = tunnelStop;
+  window.sbCopyTunnelUrl = copyTunnelUrl;
 
   // ============ BOOT ============
   if ('serviceWorker' in navigator) {
