@@ -149,11 +149,13 @@ class SettingsDialog(QDialog):
                 enabled=config.mairlist.enabled,
                 api_url=config.mairlist.api_url,
                 command=config.mairlist.command,
+                silence_command=config.mairlist.silence_command,
+                tone_command=config.mairlist.tone_command,
             ),
         )
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(560, 540)
+        self.setFixedSize(560, 600)
         self.setStyleSheet(SETTINGS_STYLE)
 
         layout = QVBoxLayout(self)
@@ -381,21 +383,40 @@ class SettingsDialog(QDialog):
         self._ml_command_input = QLineEdit(self._config.mairlist.command)
         self._ml_command_input.setPlaceholderText("PLAYER A NEXT")
         self._ml_command_input.setToolTip(
-            "mAirList remote control command to send on silence detection.\n"
-            "Examples:\n"
-            "  PLAYER A NEXT — advance to next playlist item\n"
-            "  PLAYLIST 1 START — start playlist from current position\n"
-            "  PLAYER A STOP — stop the current player"
+            "Default mAirList command (used as fallback)."
         )
-        ml_form.addRow("Command:", self._ml_command_input)
+        ml_form.addRow("Default command:", self._ml_command_input)
 
         layout.addWidget(ml_group)
 
+        # Separate commands for silence vs tone
+        cmd_group = QGroupBox("Detection-Specific Commands")
+        cmd_form = QFormLayout(cmd_group)
+        cmd_form.setSpacing(8)
+
+        self._ml_silence_cmd_input = QLineEdit(self._config.mairlist.silence_command)
+        self._ml_silence_cmd_input.setPlaceholderText("PLAYER A NEXT")
+        self._ml_silence_cmd_input.setToolTip(
+            "Command sent when SILENCE is detected.\n"
+            "Example: PLAYER A NEXT"
+        )
+        cmd_form.addRow("Silence command:", self._ml_silence_cmd_input)
+
+        self._ml_tone_cmd_input = QLineEdit(self._config.mairlist.tone_command)
+        self._ml_tone_cmd_input.setPlaceholderText("PLAYER A NEXT")
+        self._ml_tone_cmd_input.setToolTip(
+            "Command sent when a TONE is detected.\n"
+            "Example: PLAYER A NEXT"
+        )
+        cmd_form.addRow("Tone command:", self._ml_tone_cmd_input)
+
+        layout.addWidget(cmd_group)
+
         info_label = QLabel(
             "Configure the mAirList HTTP remote control API.\n"
-            "Enable it in mAirList under Config > Remote Control > HTTP Server.\n"
-            "When silence is detected, the command above will be sent\n"
-            "to advance to the next item in your playlist.\n\n"
+            "Enable it in mAirList: Config > Remote Control > HTTP Server.\n\n"
+            "You can set different commands for silence vs tone detection.\n"
+            "If a specific command is empty, the default command is used.\n\n"
             "Common commands:\n"
             "  PLAYER A NEXT — advance to next playlist item\n"
             "  PLAYLIST 1 START — start playlist from current position\n"
@@ -438,5 +459,7 @@ class SettingsDialog(QDialog):
         self._config.mairlist.enabled = self._ml_enabled_check.isChecked()
         self._config.mairlist.api_url = self._ml_api_url_input.text().strip() or "http://localhost:9000"
         self._config.mairlist.command = self._ml_command_input.text().strip()
+        self._config.mairlist.silence_command = self._ml_silence_cmd_input.text().strip()
+        self._config.mairlist.tone_command = self._ml_tone_cmd_input.text().strip()
 
         return self._config

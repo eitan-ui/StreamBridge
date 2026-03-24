@@ -25,7 +25,7 @@ class HealthMonitor(QObject):
     silence_warning = pyqtSignal()
     silence_alert = pyqtSignal()
     silence_cleared = pyqtSignal()
-    auto_stop_triggered = pyqtSignal(str)
+    auto_stop_triggered = pyqtSignal(str, str)  # (detection_type, reason)
     reconnecting = pyqtSignal(int)
     reconnect_failed = pyqtSignal()
     log_message = pyqtSignal(str)
@@ -215,7 +215,7 @@ class HealthMonitor(QObject):
                 self._auto_stop_fired = True
                 reason = f"Silence detected for {auto_stop_cfg.delay_s:.0f}s"
                 self.log_message.emit(f"AUTO-STOP: {reason}")
-                self.auto_stop_triggered.emit(reason)
+                self.auto_stop_triggered.emit("silence", reason)
                 return
 
             # Check tone-based auto-stop
@@ -243,7 +243,7 @@ class HealthMonitor(QObject):
                                 f"level={avg_level:.1f}dB)"
                             )
                             self.log_message.emit(f"AUTO-STOP: {reason}")
-                            self.auto_stop_triggered.emit(reason)
+                            self.auto_stop_triggered.emit("tone", reason)
                             return
                     else:
                         self._is_tone = False

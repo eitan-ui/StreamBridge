@@ -40,6 +40,8 @@ class MairListConfig:
     enabled: bool = False
     api_url: str = "http://localhost:9000"
     command: str = "PLAYER A NEXT"
+    silence_command: str = "PLAYER A NEXT"
+    tone_command: str = "PLAYER A NEXT"
 
 
 @dataclass

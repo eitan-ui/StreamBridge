@@ -570,15 +570,19 @@ class MainWindow(QMainWindow):
 
     # --- Auto-stop handler ---
 
-    def _on_auto_stop(self, reason: str) -> None:
+    def _on_auto_stop(self, detection_type: str, reason: str) -> None:
         """Handle auto-stop triggered by silence or tone detection."""
-        self._add_log(f"SILENCE DETECTED: {reason}")
+        self._add_log(f"{detection_type.upper()} DETECTED: {reason}")
 
-        # Trigger mAirList to advance playlist
+        # Pick the right mAirList command based on detection type
         if self._config.silence.auto_stop.trigger_mairlist:
-            cmd = self._config.mairlist.command or "PLAYER A NEXT"
+            ml = self._config.mairlist
+            if detection_type == "tone":
+                cmd = ml.tone_command or ml.command or "PLAYER A NEXT"
+            else:
+                cmd = ml.silence_command or ml.command or "PLAYER A NEXT"
             self._add_log(f"Sending mAirList command: {cmd}")
-            self._mairlist_api.send_command()
+            self._mairlist_api.send_command(cmd)
 
         # Only stop the stream if configured to do so
         if self._config.silence.auto_stop.stop_stream:
@@ -591,7 +595,7 @@ class MainWindow(QMainWindow):
         source = self._health_monitor._last_url or self._health_monitor._last_device
         self._alert_system.trigger_all(
             f"StreamBridge: {reason} on {source}. "
-            f"mAirList playlist advanced."
+            f"mAirList command sent ({detection_type})."
         )
 
     # --- Silence handlers ---
