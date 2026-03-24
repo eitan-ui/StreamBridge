@@ -10,12 +10,14 @@ Provides:
 
 import asyncio
 import json
+import os
 import socket
 import subprocess
 import threading
 import time
 import weakref
 from dataclasses import asdict
+from pathlib import Path
 from typing import Set
 
 from aiohttp import web
@@ -179,8 +181,39 @@ class ApiServer:
         # WebSocket
         app.router.add_get("/api/v1/ws", self._handle_ws)
 
+        # PWA web app routes
+        web_dir = Path(__file__).resolve().parent.parent / "web"
+        if web_dir.is_dir():
+            app.router.add_get("/app", self._handle_webapp)
+            app.router.add_get("/app/", self._handle_webapp)
+            app.router.add_static("/app/static", str(web_dir / "static"))
+            app.router.add_static("/app/icons", str(web_dir / "icons"))
+            app.router.add_get("/app/manifest.json", self._serve_file(web_dir / "manifest.json", "application/json"))
+            app.router.add_get("/app/service-worker.js", self._serve_file(web_dir / "service-worker.js", "application/javascript"))
+
         # Auth middleware
         app.middlewares.append(self._auth_middleware)
+
+    # ------------------------------------------------------------------
+    # PWA web app handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_webapp(self, request: web.Request) -> web.Response:
+        """Serve the main PWA HTML page."""
+        web_dir = Path(__file__).resolve().parent.parent / "web"
+        html_file = web_dir / "index.html"
+        if html_file.exists():
+            return web.FileResponse(html_file)
+        return web.Response(text="Web app not found", status=404)
+
+    @staticmethod
+    def _serve_file(file_path: Path, content_type: str):
+        """Create a handler that serves a specific file."""
+        async def handler(request: web.Request) -> web.Response:
+            if file_path.exists():
+                return web.FileResponse(file_path, headers={"Content-Type": content_type})
+            return web.Response(text="Not found", status=404)
+        return handler
 
     # ------------------------------------------------------------------
     # State updates (called from main_window signal connections)
