@@ -329,9 +329,9 @@
   async function micStartCapture() {
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 44100, channelCount: 1, echoCancellation: false } });
-      micContext = new AudioContext({ sampleRate: 44100 });
+      micContext = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
       const source = micContext.createMediaStreamSource(micStream);
-      micProcessor = micContext.createScriptProcessor(4096, 1, 1);
+      micProcessor = micContext.createScriptProcessor(1024, 1, 1);
       micProcessor.onaudioprocess = (e) => {
         if (ws && ws.readyState === 1) {
           const float32 = e.inputBuffer.getChannelData(0);

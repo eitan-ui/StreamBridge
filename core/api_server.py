@@ -58,12 +58,15 @@ class MicReceiver:
         self._pcm_callback = pcm_callback
         self._active = True
 
-        # Opus/OGG → PCM decoder
+        # Opus/OGG → PCM decoder (low-latency)
         cmd = [
             self._ffmpeg_path,
             "-y", "-hide_banner", "-loglevel", "error",
+            "-fflags", "nobuffer",
+            "-flags", "low_delay",
             "-f", "ogg", "-i", "pipe:0",
             "-f", "s16le", "-ar", "44100", "-ac", "2",
+            "-flush_packets", "1",
             "pipe:1",
         ]
         try:
@@ -113,7 +116,7 @@ class MicReceiver:
         """Read decoded PCM from FFmpeg stdout and send to callback."""
         while self._active and self._decoder and self._decoder.poll() is None:
             try:
-                data = self._decoder.stdout.read(4096)
+                data = self._decoder.stdout.read(1764)  # ~10ms at 44100Hz stereo 16-bit
                 if not data:
                     break
                 if self._pcm_callback:

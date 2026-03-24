@@ -34,7 +34,8 @@ class MicCaptureService: ObservableObject {
     private func beginCapture() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setCategory(.playAndRecord, mode: .voiceChat)
+            try session.setPreferredIOBufferDuration(0.005)  // 5ms buffer (Tieline-style)
             try session.setActive(true)
 
             audioEngine = AVAudioEngine()
@@ -51,8 +52,8 @@ class MicCaptureService: ObservableObject {
                 interleaved: false
             ) else { return }
 
-            // Install tap on input
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
+            // Install tap on input — 1024 samples (~23ms) for low latency
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, time in
                 Task { @MainActor in
                     self?.processAudioBuffer(buffer, format: inputFormat)
                 }

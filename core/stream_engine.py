@@ -105,10 +105,11 @@ class StreamEngine(QObject):
         else:
             # Stream URL: use low-latency flags
             cmd += [
-                "-fflags", "nobuffer",
+                "-fflags", "+nobuffer+fastseek+flush_packets",
                 "-flags", "low_delay",
-                "-analyzeduration", "500000",
-                "-probesize", "32768",
+                "-analyzeduration", "200000",
+                "-probesize", "16384",
+                "-thread_queue_size", "64",
             ]
             cmd += input_args
 

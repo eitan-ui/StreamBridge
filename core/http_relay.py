@@ -87,6 +87,8 @@ class AudioEncoder:
             "-b:a", f"{self._bitrate}k",
             "-application", "lowdelay",
             "-frame_duration", "10",
+            "-vbr", "off",
+            "-packet_loss", "10",
             "-flush_packets", "1",
             "-f", "ogg",
             "pipe:1",
@@ -165,8 +167,8 @@ class HttpRelay(QObject):
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
-        self._pcm_buffer = RingBuffer(max_seconds=2.0)
-        self._audio_chunks: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._pcm_buffer = RingBuffer(max_seconds=0.5)
+        self._audio_chunks: asyncio.Queue = asyncio.Queue(maxsize=30)
         self._clients: Set[web.StreamResponse] = set()
         self._encoder: AudioEncoder | None = None
         self._running = False
@@ -318,7 +320,7 @@ class HttpRelay(QObject):
                 time.sleep(0.1)
                 continue
 
-            data = self._encoder.read_chunk(1024)
+            data = self._encoder.read_chunk(512)
             if not data:
                 # Encoder stopped producing output — wait for restart
                 time.sleep(0.05)
@@ -363,7 +365,7 @@ class HttpRelay(QObject):
             while self._running:
                 try:
                     chunk = await asyncio.wait_for(
-                        self._audio_chunks.get(), timeout=2.0
+                        self._audio_chunks.get(), timeout=0.5
                     )
                     await response.write(chunk)
                 except asyncio.TimeoutError:
