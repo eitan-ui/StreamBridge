@@ -31,7 +31,7 @@ QMainWindow {
 QWidget {
     background-color: #1a1a2e;
     color: #e0e0e0;
-    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
 }
 QLabel {
     background: transparent;
