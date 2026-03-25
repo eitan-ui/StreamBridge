@@ -25,7 +25,7 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #16213e;
     color: #7f8fa6;
-    padding: 8px 16px;
+    padding: 8px 10px;
     border: 1px solid #0f3460;
     border-bottom: none;
     border-top-left-radius: 4px;
@@ -34,6 +34,9 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background-color: #1a1a2e;
     color: #e0e0e0;
+}
+QTabBar {
+    qproperty-expanding: false;
 }
 QGroupBox {
     border: 1px solid #0f3460;
@@ -160,7 +163,7 @@ class SettingsDialog(QDialog):
         )
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(560, 600)
+        self.setFixedSize(680, 620)
         self.setStyleSheet(SETTINGS_STYLE)
 
         layout = QVBoxLayout(self)
