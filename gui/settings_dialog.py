@@ -18,7 +18,7 @@ QDialog {
     color: #e0e0e0;
 }
 QTabWidget::pane {
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     background-color: #1a1a2e;
     border-radius: 4px;
 }
@@ -26,7 +26,7 @@ QTabBar::tab {
     background-color: #16213e;
     color: #7f8fa6;
     padding: 8px 10px;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-bottom: none;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
@@ -39,7 +39,7 @@ QTabBar {
     qproperty-expanding: false;
 }
 QGroupBox {
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     margin-top: 10px;
     padding-top: 10px;
@@ -57,7 +57,7 @@ QLabel {
 }
 QLineEdit, QSpinBox, QDoubleSpinBox {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     padding: 5px 8px;
     color: #e0e0e0;
@@ -65,16 +65,19 @@ QLineEdit, QSpinBox, QDoubleSpinBox {
 }
 QComboBox {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     padding: 5px 8px;
     color: #e0e0e0;
 }
 QComboBox QAbstractItemView {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     color: #e0e0e0;
     selection-background-color: #0f3460;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: #3498db;
 }
 QCheckBox {
     color: #e0e0e0;
@@ -84,7 +87,7 @@ QCheckBox {
 QCheckBox::indicator {
     width: 16px;
     height: 16px;
-    border: 1px solid #0f3460;
+    border: 1px solid #3a3a5c;
     border-radius: 3px;
     background-color: #16213e;
 }
@@ -534,7 +537,7 @@ class SettingsDialog(QDialog):
         self._pubkey_display.setMaximumHeight(60)
         self._pubkey_display.setStyleSheet(
             "font-size: 10px; font-family: 'Consolas', monospace; "
-            "background-color: #16213e; border: 1px solid #0f3460;"
+            "background-color: #16213e; border: 1px solid #252545;"
         )
         self._pubkey_display.setPlaceholderText(
             "Click 'Generate Key Pair' to create a new key, "
