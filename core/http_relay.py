@@ -167,7 +167,7 @@ class HttpRelay(QObject):
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
-        self._pcm_buffer = RingBuffer(max_seconds=0.5)
+        self._pcm_buffer = RingBuffer(max_seconds=0.2)
         self._audio_chunks: asyncio.Queue = asyncio.Queue(maxsize=30)
         self._clients: Set[web.StreamResponse] = set()
         self._encoder: AudioEncoder | None = None
@@ -320,10 +320,10 @@ class HttpRelay(QObject):
                 time.sleep(0.1)
                 continue
 
-            data = self._encoder.read_chunk(512)
+            data = self._encoder.read_chunk(1024)
             if not data:
                 # Encoder stopped producing output — wait for restart
-                time.sleep(0.05)
+                time.sleep(0.02)
                 continue
 
             # Put in queue, drop oldest if full (never block)
@@ -365,11 +365,11 @@ class HttpRelay(QObject):
             while self._running:
                 try:
                     chunk = await asyncio.wait_for(
-                        self._audio_chunks.get(), timeout=0.5
+                        self._audio_chunks.get(), timeout=0.2
                     )
                     await response.write(chunk)
                 except asyncio.TimeoutError:
-                    # No data for 2s — that's fine, encoder feeds silence
+                    # No data for 0.2s — that's fine, encoder feeds silence
                     # Just keep the connection alive
                     continue
                 except (ConnectionResetError, ConnectionError,
