@@ -80,7 +80,7 @@ struct SettingsView: View {
 
     private func audioSection(_ config: Binding<StreamConfig>) -> some View {
         Section("Audio") {
-            Picker("Opus Bitrate", selection: config.mp3Bitrate) {
+            Picker("Opus Bitrate", selection: config.opusBitrate) {
                 Text("32 kbps").tag(32)
                 Text("48 kbps").tag(48)
                 Text("64 kbps").tag(64)
@@ -299,7 +299,7 @@ struct SettingsView: View {
             do {
                 let updates: [String: Any] = [
                     "port": cfg.port,
-                    "mp3_bitrate": cfg.mp3Bitrate,
+                    "opus_bitrate": cfg.opusBitrate,
                     "ffmpeg_path": cfg.ffmpegPath,
                     "silence": [
                         "threshold_db": cfg.silence.thresholdDb,

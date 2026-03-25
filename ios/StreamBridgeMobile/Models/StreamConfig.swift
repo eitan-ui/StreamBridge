@@ -3,7 +3,7 @@ import Foundation
 struct StreamConfig: Codable {
     var port: Int = 9000
     var audioInputDevice: String = ""
-    var mp3Bitrate: Int = 128
+    var opusBitrate: Int = 128
     var ffmpegPath: String = "ffmpeg"
     var silence: SilenceConfig = SilenceConfig()
     var reconnect: ReconnectConfig = ReconnectConfig()
@@ -15,7 +15,7 @@ struct StreamConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case port
         case audioInputDevice = "audio_input_device"
-        case mp3Bitrate = "mp3_bitrate"
+        case opusBitrate = "opus_bitrate"
         case ffmpegPath = "ffmpeg_path"
         case silence, reconnect, alerts, mairlist, api, tunnel
     }

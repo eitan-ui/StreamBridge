@@ -449,7 +449,7 @@
     if (!S.config) return;
     const c = S.config;
     document.getElementById('set-port').value = c.port;
-    document.getElementById('set-bitrate').value = c.mp3_bitrate;
+    document.getElementById('set-bitrate').value = c.opus_bitrate ?? c.mp3_bitrate;
     document.getElementById('set-threshold').value = c.silence?.threshold_db ?? -50;
     document.getElementById('set-warn-delay').value = c.silence?.warning_delay_s ?? 10;
     document.getElementById('set-alert-delay').value = c.silence?.alert_delay_s ?? 30;
@@ -496,7 +496,7 @@
     const c = S.config;
     const body = {
       port: parseInt(document.getElementById('set-port').value) || 9000,
-      mp3_bitrate: parseInt(document.getElementById('set-bitrate').value) || 128,
+      opus_bitrate: parseInt(document.getElementById('set-bitrate').value) || 128,
       silence: {
         threshold_db: parseFloat(document.getElementById('set-threshold').value) || -50,
         warning_delay_s: parseInt(document.getElementById('set-warn-delay').value) || 10,
