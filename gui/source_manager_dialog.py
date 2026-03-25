@@ -19,7 +19,7 @@ QLabel {
 }
 QLineEdit {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     padding: 7px 10px;
     color: #e0e0e0;
@@ -27,7 +27,7 @@ QLineEdit {
 }
 QListWidget {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     color: #e0e0e0;
     font-size: 12px;

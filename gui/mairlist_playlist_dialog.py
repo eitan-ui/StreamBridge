@@ -22,7 +22,7 @@ QLabel {
 QTableWidget {
     background-color: #0d1b2a;
     gridline-color: #1b2838;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     color: #e0e0e0;
     font-family: 'Consolas', 'SF Mono', monospace;
@@ -42,7 +42,7 @@ QHeaderView::section {
     color: #7f8fa6;
     border: none;
     border-right: 1px solid #1b2838;
-    border-bottom: 2px solid #0f3460;
+    border-bottom: 2px solid #252545;
     padding: 6px 4px;
     font-size: 10px;
     font-weight: bold;
@@ -91,7 +91,7 @@ QPushButton#applyBtn:hover {
 }
 QSpinBox, QComboBox {
     background-color: #16213e;
-    border: 1px solid #0f3460;
+    border: 1px solid #252545;
     border-radius: 4px;
     padding: 4px 8px;
     color: #e0e0e0;
