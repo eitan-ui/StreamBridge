@@ -89,7 +89,7 @@ class ApiConfig:
 class Config:
     port: int = 9000
     audio_input_device: str = ""
-    mp3_bitrate: int = 128
+    opus_bitrate: int = 128
     ffmpeg_path: str = "ffmpeg"
     silence: SilenceConfig = field(default_factory=SilenceConfig)
     reconnect: ReconnectConfig = field(default_factory=ReconnectConfig)
@@ -116,7 +116,7 @@ class Config:
             return cls(
                 port=data.get("port", 9000),
                 audio_input_device=data.get("audio_input_device", ""),
-                mp3_bitrate=data.get("mp3_bitrate", 128),
+                opus_bitrate=data.get("opus_bitrate", data.get("mp3_bitrate", 128)),
                 ffmpeg_path=data.get("ffmpeg_path", "ffmpeg"),
                 silence=SilenceConfig(
                     **silence_data,
