@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QGroupBox, QFormLayout, QTabWidget, QWidget,
-    QFileDialog, QTextEdit, QMessageBox,
+    QFileDialog, QTextEdit, QMessageBox, QScrollArea,
 )
 from PyQt6.QtCore import Qt
 
@@ -166,7 +166,7 @@ class SettingsDialog(QDialog):
         )
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(680, 620)
+        self.setFixedSize(680, 720)
         self.setStyleSheet(SETTINGS_STYLE)
 
         layout = QVBoxLayout(self)
@@ -443,7 +443,15 @@ class SettingsDialog(QDialog):
 
     def _create_remote_tab(self) -> QWidget:
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(12)
 
         remote_group = QGroupBox("Remote Access (Mobile App)")
@@ -575,6 +583,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(info_label)
 
         layout.addStretch()
+
+        scroll.setWidget(content)
+        tab_layout.addWidget(scroll)
         return tab
 
     def _generate_token(self) -> None:
