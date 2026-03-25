@@ -402,9 +402,13 @@ class ApiServer:
         cfg = self._config
 
         # Apply top-level scalar fields
-        for key in ("port", "mp3_bitrate", "ffmpeg_path", "audio_input_device"):
+        for key in ("port", "opus_bitrate", "ffmpeg_path", "audio_input_device"):
             if key in updates:
                 setattr(cfg, key, updates[key])
+
+        # Backward compat: accept old key from mobile apps
+        if "mp3_bitrate" in updates and "opus_bitrate" not in updates:
+            cfg.opus_bitrate = updates["mp3_bitrate"]
 
         # Apply nested sections
         if "silence" in updates:

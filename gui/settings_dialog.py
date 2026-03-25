@@ -122,7 +122,7 @@ class SettingsDialog(QDialog):
         self._config = Config(
             port=config.port,
             audio_input_device=config.audio_input_device,
-            mp3_bitrate=config.mp3_bitrate,
+            opus_bitrate=config.opus_bitrate,
             ffmpeg_path=config.ffmpeg_path,
             silence=SilenceConfig(
                 threshold_db=config.silence.threshold_db,
@@ -218,7 +218,7 @@ class SettingsDialog(QDialog):
         self._bitrate_combo = QComboBox()
         for br in [32, 48, 64, 96, 128, 192]:
             self._bitrate_combo.addItem(f"{br} kbps (Opus)", br)
-        idx = self._bitrate_combo.findData(self._config.mp3_bitrate)
+        idx = self._bitrate_combo.findData(self._config.opus_bitrate)
         if idx >= 0:
             self._bitrate_combo.setCurrentIndex(idx)
         form.addRow("Opus bitrate:", self._bitrate_combo)
@@ -615,7 +615,7 @@ class SettingsDialog(QDialog):
         """Return the modified config."""
         self._config.port = self._port_spin.value()
         self._config.ffmpeg_path = self._ffmpeg_input.text().strip() or "ffmpeg"
-        self._config.mp3_bitrate = self._bitrate_combo.currentData()
+        self._config.opus_bitrate = self._bitrate_combo.currentData()
 
         self._config.silence.threshold_db = self._threshold_spin.value()
         self._config.silence.warning_delay_s = self._warning_spin.value()

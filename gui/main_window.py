@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
         self._relay = HttpRelay(
             port=config.port,
             ffmpeg_path=config.ffmpeg_path,
-            bitrate=config.mp3_bitrate,
+            bitrate=config.opus_bitrate,
             allow_remote=config.api.allow_remote,
         )
         self._alert_system = AlertSystem(config.alerts)
