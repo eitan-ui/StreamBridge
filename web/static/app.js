@@ -403,7 +403,7 @@
     list.innerHTML = '';
     S.sources.forEach((s, i) => {
       list.innerHTML += '<div class="card" style="display:flex;justify-content:space-between;align-items:center">' +
-        '<div><div style="font-weight:600">' + esc(s.name) + '</div><div style="font-size:11px;color:var(--text2)">' + esc(s.url) + '</div></div>' +
+        '<div><div style="font-weight:600">' + esc(s.name) + '</div><div class="mono" style="font-size:11px;color:var(--text2)">' + esc(s.url) + '</div></div>' +
         '<button class="btn-sm" onclick="sbDeleteSource(' + s.index + ')">Del</button></div>';
     });
   }
@@ -463,6 +463,13 @@
     document.getElementById('set-ml-cmd').value = c.mairlist?.command ?? '';
     document.getElementById('set-ml-silence-cmd').value = c.mairlist?.silence_command ?? '';
     document.getElementById('set-ml-tone-cmd').value = c.mairlist?.tone_command ?? '';
+    // mAirList actions
+    document.getElementById('set-ml-action-next').className = 'toggle' + (c.mairlist?.action_next !== false ? ' on' : '');
+    document.getElementById('set-ml-action-delete').className = 'toggle' + (c.mairlist?.action_delete_item ? ' on' : '');
+    document.getElementById('set-ml-action-timing').className = 'toggle' + (c.mairlist?.action_change_timing ? ' on' : '');
+    document.getElementById('set-ml-timing-value').value = c.mairlist?.action_timing_value ?? 'Normal';
+    document.getElementById('set-ml-action-player').value = c.mairlist?.action_player ?? 'A';
+    document.getElementById('set-ml-action-playlist').value = c.mairlist?.action_playlist ?? 1;
     // Tunnel
     document.getElementById('set-tunnel-enabled').className = 'toggle' + (c.tunnel?.enabled ? ' on' : '');
     document.getElementById('set-tunnel-host').value = c.tunnel?.host ?? '';
@@ -480,6 +487,29 @@
     } else {
       tRow.style.display = 'none';
     }
+    // Schedule
+    document.getElementById('set-schedule-enabled').className = 'toggle' + (c.schedule?.enabled ? ' on' : '');
+    renderScheduleEntries(c.schedule?.entries || []);
+  }
+
+  function renderScheduleEntries(entries) {
+    const container = document.getElementById('schedule-entries');
+    if (!container) return;
+    container.innerHTML = '';
+    entries.forEach((entry, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+      row.innerHTML =
+        '<input type="time" value="' + (entry.time || '') + '" ' +
+        'onchange="sbScheduleUpdate(' + i + ',\'time\',this.value)" ' +
+        'class="mono" style="width:90px;background:var(--input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;color:var(--text1);font-size:13px">' +
+        '<input type="text" value="' + (entry.url || '') + '" placeholder="Stream URL" ' +
+        'onchange="sbScheduleUpdate(' + i + ',\'url\',this.value)" ' +
+        'style="flex:1;min-width:0">' +
+        '<button class="toggle' + (entry.enabled !== false ? ' on' : '') + '" ' +
+        'onclick="sbScheduleToggle(' + i + ')" style="flex-shrink:0"></button>';
+      container.appendChild(row);
+    });
   }
 
   function toggleSetting(id, path) {
@@ -515,6 +545,20 @@
         command: document.getElementById('set-ml-cmd').value,
         silence_command: document.getElementById('set-ml-silence-cmd').value,
         tone_command: document.getElementById('set-ml-tone-cmd').value,
+        action_next: c.mairlist?.action_next !== false,
+        action_delete_item: c.mairlist?.action_delete_item ?? false,
+        action_change_timing: c.mairlist?.action_change_timing ?? false,
+        action_timing_value: document.getElementById('set-ml-timing-value').value,
+        action_player: document.getElementById('set-ml-action-player').value,
+        action_playlist: parseInt(document.getElementById('set-ml-action-playlist').value) || 1,
+      },
+      schedule: {
+        enabled: c.schedule?.enabled ?? false,
+        entries: (c.schedule?.entries || []).map(e => ({
+          time: e.time || '',
+          url: e.url || '',
+          enabled: e.enabled !== false,
+        })),
       },
       tunnel: {
         enabled: c.tunnel?.enabled ?? false,
@@ -552,6 +596,29 @@
     }
   }
 
+  // ============ SCHEDULE ============
+  function scheduleAdd() {
+    if (!S.config) return;
+    if (!S.config.schedule) S.config.schedule = { enabled: false, entries: [] };
+    if (!S.config.schedule.entries) S.config.schedule.entries = [];
+    S.config.schedule.entries.push({ time: '', url: '', enabled: true });
+    renderScheduleEntries(S.config.schedule.entries);
+  }
+  function scheduleRemove() {
+    if (!S.config?.schedule?.entries?.length) return;
+    S.config.schedule.entries.pop();
+    renderScheduleEntries(S.config.schedule.entries);
+  }
+  function scheduleUpdate(index, field, value) {
+    if (!S.config?.schedule?.entries?.[index]) return;
+    S.config.schedule.entries[index][field] = value;
+  }
+  function scheduleToggle(index) {
+    if (!S.config?.schedule?.entries?.[index]) return;
+    S.config.schedule.entries[index].enabled = !S.config.schedule.entries[index].enabled;
+    renderScheduleEntries(S.config.schedule.entries);
+  }
+
   // ============ HELPERS ============
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -575,6 +642,10 @@
   window.sbTunnelStart = tunnelStart;
   window.sbTunnelStop = tunnelStop;
   window.sbCopyTunnelUrl = copyTunnelUrl;
+  window.sbScheduleAdd = scheduleAdd;
+  window.sbScheduleRemove = scheduleRemove;
+  window.sbScheduleUpdate = scheduleUpdate;
+  window.sbScheduleToggle = scheduleToggle;
 
   // ============ BOOT ============
   if ('serviceWorker' in navigator) {

@@ -87,9 +87,52 @@ class MairListAPI(QObject):
         cmd = f"PLAYLIST {playlist} SET {index} {prop} {value}"
         self.send_command(cmd)
 
+    def delete_item(self, playlist: int, index: int) -> None:
+        """Delete an item from a playlist."""
+        self.send_command(f"PLAYLIST {playlist} DELETE {index}")
+
     def player_command(self, player: str, action: str) -> None:
         """Send a player command (START, STOP, NEXT, PREVIOUS, PAUSE)."""
         self.send_command(f"PLAYER {player} {action}")
+
+    def execute_auto_stop_actions(self, detection_type: str) -> list[str]:
+        """Execute all configured mAirList actions for auto-stop.
+
+        Returns list of action descriptions for logging.
+        """
+        if not self._config.enabled:
+            return []
+
+        ml = self._config
+        actions_done = []
+
+        # 1. Change timing (while item still exists)
+        if ml.action_change_timing:
+            cmd = f"PLAYLIST {ml.action_playlist} SET 0 TIMING {ml.action_timing_value}"
+            self.send_command(cmd)
+            actions_done.append(f"Timing → {ml.action_timing_value}")
+
+        # 2. Delete item from playlist
+        if ml.action_delete_item:
+            self.delete_item(ml.action_playlist, 0)
+            actions_done.append(f"Deleted item from playlist {ml.action_playlist}")
+
+        # 3. Next player
+        if ml.action_next:
+            self.player_command(ml.action_player, "NEXT")
+            actions_done.append(f"Player {ml.action_player} NEXT")
+
+        # 4. Custom command (detection-specific)
+        custom_cmd = ""
+        if detection_type == "tone":
+            custom_cmd = ml.tone_command
+        else:
+            custom_cmd = ml.silence_command
+        if custom_cmd:
+            self.send_command(custom_cmd)
+            actions_done.append(f"Custom: {custom_cmd}")
+
+        return actions_done
 
     # --- Internal methods ---
 

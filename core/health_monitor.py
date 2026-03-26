@@ -26,6 +26,7 @@ class HealthMonitor(QObject):
     silence_alert = pyqtSignal()
     silence_cleared = pyqtSignal()
     auto_stop_triggered = pyqtSignal(str, str)  # (detection_type, reason)
+    failover_triggered = pyqtSignal(str)  # backup_source_name
     reconnecting = pyqtSignal(int)
     reconnect_failed = pyqtSignal()
     log_message = pyqtSignal(str)
@@ -50,6 +51,10 @@ class HealthMonitor(QObject):
         self._auto_stop_fired = False
         self._recent_levels: list[float] = []
         self._recent_peaks: list[float] = []
+
+        # Failover tracking
+        self._failover_silence_start: float = 0.0
+        self._failover_fired = False
 
         # Reconnection tracking
         self._reconnect_count = 0
@@ -107,6 +112,8 @@ class HealthMonitor(QObject):
         self._tone_start_time = 0.0
         self._recent_levels.clear()
         self._recent_peaks.clear()
+        self._failover_fired = False
+        self._failover_silence_start = 0.0
         self._timer.start()
 
     def stop_monitoring(self) -> None:
@@ -205,6 +212,22 @@ class HealthMonitor(QObject):
                 f"for {int(silence_duration)} seconds"
             )
 
+        # Failover check
+        fo = self._config.failover
+        if fo.enabled and fo.backup_source_name and not self._failover_fired:
+            if fo.switch_on_silence and silence_duration >= fo.switch_delay_s:
+                self._failover_fired = True
+                self.log_message.emit(
+                    f"FAILOVER: Switching to '{fo.backup_source_name}' "
+                    f"after {int(silence_duration)}s silence"
+                )
+                self.failover_triggered.emit(fo.backup_source_name)
+                return
+
+        # Reset failover if audio resumes
+        if silence_duration < 1.0:
+            self._failover_fired = False
+
         # Auto-stop check (silence or tone)
         auto_stop_cfg = self._config.silence.auto_stop
         if auto_stop_cfg.enabled and not self._auto_stop_fired:
@@ -220,7 +243,8 @@ class HealthMonitor(QObject):
 
             # Check tone-based auto-stop
             if (auto_stop_cfg.tone_detection_enabled
-                    and len(self._recent_peaks) >= 20):
+                    and len(self._recent_peaks) >= 20
+                    and len(self._recent_levels) >= 20):
                 avg_crest = sum(self._recent_peaks) / len(self._recent_peaks)
                 # A pure tone has crest factor ~3dB; normal audio is 12-20dB
                 if avg_crest < auto_stop_cfg.tone_max_crest_db:

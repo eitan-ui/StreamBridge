@@ -1,30 +1,26 @@
 import sys
 import subprocess
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QVBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
+from gui.theme import (
+    FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, FONT_LG, FONT_MD, SPACING_MD,
+)
+from gui.frameless import FramelessDialog
 
-class AboutDialog(QDialog):
+
+class AboutDialog(FramelessDialog):
     def __init__(self, ffmpeg_path: str = "ffmpeg", parent=None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, title="About StreamBridge")
         VERSION = "1.0.0"
-        self.setWindowTitle("About StreamBridge")
-        self.setFixedSize(340, 300)
-        self.setStyleSheet("""
-            QDialog { background-color: #1a1a2e; color: #e0e0e0; }
-            QLabel { background: transparent; }
-            QPushButton {
-                background-color: #0f3460; color: #e0e0e0; border: none;
-                border-radius: 4px; padding: 8px 20px; font-size: 12px;
-            }
-            QPushButton:hover { background-color: #1a5276; }
-        """)
+        self.setFixedSize(380, 370)
 
-        layout = QVBoxLayout(self)
+        layout = self.content_layout
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(8)
+        layout.setSpacing(SPACING_MD)
 
         # Icon
         try:
@@ -40,12 +36,12 @@ class AboutDialog(QDialog):
             pass
 
         title = QLabel(f"StreamBridge v{VERSION}")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db;")
+        title.setStyleSheet(f"font-size: {FONT_LG + 3}px; font-weight: bold; color: {ACCENT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        desc = QLabel("Audio stream bridge for mAirList\nCapture → Relay → Monitor")
-        desc.setStyleSheet("font-size: 11px; color: #7f8fa6;")
+        desc = QLabel("Audio stream bridge for mAirList\nCapture \u2192 Relay \u2192 Monitor")
+        desc.setStyleSheet(f"font-size: {FONT_MD - 2}px; color: {TEXT_SECONDARY};")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(desc)
 
@@ -64,7 +60,7 @@ class AboutDialog(QDialog):
             f"FFmpeg {ffmpeg_ver}\n"
             f"{sys.platform.title()}"
         )
-        info.setStyleSheet("font-size: 10px; color: #555; font-family: monospace;")
+        info.setStyleSheet(f"font-size: 10px; color: {TEXT_SECONDARY}; font-family: {FONT_MONO};")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(info)
 

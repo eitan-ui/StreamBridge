@@ -1,4 +1,4 @@
-const CACHE_NAME = 'streambridge-v1';
+const CACHE_NAME = 'streambridge-v2';
 const ASSETS = [
   '/app',
   '/app/static/style.css',

@@ -48,7 +48,9 @@ class StreamEngine(QObject):
         self._process: subprocess.Popen | None = None
         self._state = StreamState.IDLE
         self._running = False
+        self._lock = threading.Lock()  # Protects _running, _process, _metadata_parsed, level accumulators
         self._thread: threading.Thread | None = None
+        self._stderr_thread: threading.Thread | None = None
         self._url = ""
         self._device = ""
         self._metadata_parsed = False
@@ -126,34 +128,50 @@ class StreamEngine(QObject):
 
     def start(self, url: str = "", device: str = "") -> None:
         """Start capturing from a URL or audio device."""
-        if self._running:
-            self.stop()
+        with self._lock:
+            if self._running:
+                # Release lock before calling stop() which also acquires it
+                pass
+            else:
+                self._url = url
+                self._device = device
+                self._metadata_parsed = False
+                self._running = True
+                self._level_left = None
+                self._peak_left = None
+                self._peak_right = None
 
-        self._url = url
-        self._device = device
-        self._metadata_parsed = False
-        self._running = True
-        self._level_left = None
+                self._set_state(StreamState.CONNECTING)
+                self.log_message.emit(f"Connecting to {url or device}...")
 
-        self._set_state(StreamState.CONNECTING)
-        self.log_message.emit(f"Connecting to {url or device}...")
+                self._thread = threading.Thread(target=self._run, daemon=True)
+                self._thread.start()
+                return
 
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        # Was already running — stop first then start
+        self.stop()
+        self.start(url=url, device=device)
 
     def stop(self) -> None:
         """Stop the current capture."""
-        self._running = False
-        if self._process:
+        with self._lock:
+            self._running = False
+            proc = self._process
+            self._process = None
+
+        if proc:
             try:
-                self._process.terminate()
-                self._process.wait(timeout=5)
+                proc.terminate()
+                proc.wait(timeout=5)
             except (subprocess.TimeoutExpired, OSError):
                 try:
-                    self._process.kill()
+                    proc.kill()
                 except OSError:
                     pass
-            self._process = None
+
+        if self._stderr_thread and self._stderr_thread.is_alive():
+            self._stderr_thread.join(timeout=3)
+        self._stderr_thread = None
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3)
@@ -162,43 +180,51 @@ class StreamEngine(QObject):
         self._set_state(StreamState.IDLE)
         self.log_message.emit("Stream stopped")
 
+    def _is_running(self) -> bool:
+        with self._lock:
+            return self._running
+
     def _run(self) -> None:
         """Main worker thread: runs FFmpeg and reads output."""
         cmd = self._build_command()
 
         try:
-            self._process = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
             )
+            with self._lock:
+                self._process = proc
         except FileNotFoundError:
             self.error.emit(f"FFmpeg not found at: {self._ffmpeg_path}")
             self._set_state(StreamState.ERROR)
             self.log_message.emit("ERROR: FFmpeg not found")
-            self._running = False
+            with self._lock:
+                self._running = False
             return
         except OSError as e:
             self.error.emit(f"Failed to start FFmpeg: {e}")
             self._set_state(StreamState.ERROR)
             self.log_message.emit(f"ERROR: {e}")
-            self._running = False
+            with self._lock:
+                self._running = False
             return
 
         # Start stderr reader thread for metadata and levels
-        stderr_thread = threading.Thread(
+        self._stderr_thread = threading.Thread(
             target=self._read_stderr, daemon=True
         )
-        stderr_thread.start()
+        self._stderr_thread.start()
 
         # Read PCM audio data from stdout
         CHUNK_SIZE = 1024  # ~6ms at 44100Hz stereo 16-bit
         first_chunk = True
 
-        while self._running and self._process and self._process.poll() is None:
+        while self._is_running() and proc.poll() is None:
             try:
-                data = self._process.stdout.read(CHUNK_SIZE)
+                data = proc.stdout.read(CHUNK_SIZE)
                 if not data:
                     break
                 if first_chunk:
@@ -211,21 +237,24 @@ class StreamEngine(QObject):
                 break
 
         # Process ended
-        if self._running:
+        if self._is_running():
             # Unexpected termination
-            return_code = self._process.returncode if self._process else -1
+            return_code = proc.returncode if proc else -1
             self.error.emit(f"FFmpeg exited with code {return_code}")
             self._set_state(StreamState.ERROR)
             self.log_message.emit(f"Stream disconnected (code {return_code})")
-        self._running = False
+        with self._lock:
+            self._running = False
 
     def _read_stderr(self) -> None:
         """Read FFmpeg stderr for metadata and audio levels."""
-        if not self._process or not self._process.stderr:
+        with self._lock:
+            proc = self._process
+        if not proc or not proc.stderr:
             return
 
-        for raw_line in self._process.stderr:
-            if not self._running:
+        for raw_line in proc.stderr:
+            if not self._is_running():
                 break
 
             try:
@@ -237,10 +266,13 @@ class StreamEngine(QObject):
                 continue
 
             # Parse metadata (only once)
-            if not self._metadata_parsed:
+            with self._lock:
+                metadata_parsed = self._metadata_parsed
+            if not metadata_parsed:
                 meta = parse_ffmpeg_metadata(line)
                 if meta:
-                    self._metadata_parsed = True
+                    with self._lock:
+                        self._metadata_parsed = True
                     self.metadata_ready.emit(meta)
                     self.log_message.emit(f"Format: {meta.summary}")
 
@@ -257,18 +289,21 @@ class StreamEngine(QObject):
                 except ValueError:
                     value = -100.0
 
-                if channel == 1:
-                    self._level_left = value
-                elif channel == 2 and self._level_left is not None:
-                    levels = AudioLevels(
-                        left_db=self._level_left, right_db=value,
-                        left_peak_db=self._peak_left if self._peak_left is not None else self._level_left,
-                        right_peak_db=self._peak_right if hasattr(self, '_peak_right') and self._peak_right is not None else value,
-                    )
-                    self._level_left = None
-                    self._peak_left = None
-                    self._peak_right = None
-                    self.audio_levels.emit(levels)
+                emit_levels = None
+                with self._lock:
+                    if channel == 1:
+                        self._level_left = value
+                    elif channel == 2 and self._level_left is not None:
+                        emit_levels = AudioLevels(
+                            left_db=self._level_left, right_db=value,
+                            left_peak_db=self._peak_left if self._peak_left is not None else self._level_left,
+                            right_peak_db=self._peak_right if self._peak_right is not None else value,
+                        )
+                        self._level_left = None
+                        self._peak_left = None
+                        self._peak_right = None
+                if emit_levels is not None:
+                    self.audio_levels.emit(emit_levels)
 
             # Parse peak levels:
             #   lavfi.astats.1.Peak_level=-18.0
@@ -282,10 +317,11 @@ class StreamEngine(QObject):
                     value = float(peak_match.group(2))
                 except ValueError:
                     value = -100.0
-                if channel == 1:
-                    self._peak_left = value
-                elif channel == 2:
-                    self._peak_right = value
+                with self._lock:
+                    if channel == 1:
+                        self._peak_left = value
+                    elif channel == 2:
+                        self._peak_right = value
 
     @staticmethod
     def list_audio_devices(ffmpeg_path: str = "ffmpeg") -> list[tuple[str, str]]:

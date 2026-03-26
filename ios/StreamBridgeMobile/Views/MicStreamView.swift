@@ -125,9 +125,9 @@ struct MicStreamView: View {
                     Text(micService.isCapturing ? "Stop Streaming" : "Start Streaming")
                         .font(.headline)
                 }
-                .frame(width: 200, height: 200)
+                .frame(width: 160, height: 160)
                 .background(micService.isCapturing ? Color.red.opacity(0.2) : Color.blue.opacity(0.2))
-                .cornerRadius(100)
+                .cornerRadius(80)
             }
         }
     }

@@ -9,7 +9,9 @@ Provides:
 """
 
 import asyncio
+import collections
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -25,6 +27,8 @@ from aiohttp import web
 from models.config import Config, ApiConfig
 from models.source import Source, SourceManager
 from utils.audio_levels import AudioLevels, StreamMetadata
+
+api_logger = logging.getLogger(__name__)
 
 
 class MicReceiver:
@@ -137,7 +141,10 @@ class ApiServer:
         self._config = config
         self._source_manager = source_manager
         self._ws_clients: Set[web.WebSocketResponse] = set()
+        self._ws_lock = asyncio.Lock()  # Protects _ws_clients
         self._mic_receiver = MicReceiver(ffmpeg_path)
+        # Rate limiting: track failed auth attempts per IP (max 10 in 60s window)
+        self._auth_failures: dict[str, collections.deque] = {}
 
         # Current state (updated by main_window signal connections)
         self._stream_state: str = "idle"
@@ -300,6 +307,22 @@ class ApiServer:
     # Auth middleware
     # ------------------------------------------------------------------
 
+    def _check_rate_limit(self, ip: str) -> bool:
+        """Returns True if the IP is rate-limited (too many auth failures)."""
+        now = time.time()
+        if ip not in self._auth_failures:
+            return False
+        attempts = self._auth_failures[ip]
+        # Remove attempts older than 60s
+        while attempts and attempts[0] < now - 60:
+            attempts.popleft()
+        return len(attempts) >= 10
+
+    def _record_auth_failure(self, ip: str) -> None:
+        if ip not in self._auth_failures:
+            self._auth_failures[ip] = collections.deque()
+        self._auth_failures[ip].append(time.time())
+
     @web.middleware
     async def _auth_middleware(self, request: web.Request,
                                handler) -> web.StreamResponse:
@@ -312,14 +335,23 @@ class ApiServer:
             # No token configured = no auth required
             return await handler(request)
 
+        ip = request.remote or "unknown"
+        if self._check_rate_limit(ip):
+            return web.json_response(
+                {"error": "Too many failed attempts, try again later"}, status=429
+            )
+
+        # Prefer Authorization header (recommended)
         auth_header = request.headers.get("Authorization", "")
         if auth_header == f"Bearer {token}":
             return await handler(request)
 
-        # Also allow token as query parameter for WebSocket connections
+        # Also allow token as query parameter (deprecated, for backward compat)
         if request.query.get("token") == token:
             return await handler(request)
 
+        self._record_auth_failure(ip)
+        api_logger.warning("Unauthorized API access from %s to %s", ip, request.path)
         return web.json_response(
             {"error": "Unauthorized"}, status=401
         )
@@ -438,7 +470,10 @@ class ApiServer:
 
         if "mairlist" in updates:
             for key in ("enabled", "api_url", "command",
-                        "silence_command", "tone_command"):
+                        "silence_command", "tone_command",
+                        "action_next", "action_delete_item",
+                        "action_change_timing", "action_timing_value",
+                        "action_player", "action_playlist"):
                 if key in updates["mairlist"]:
                     setattr(cfg.mairlist, key, updates["mairlist"][key])
 
@@ -450,6 +485,22 @@ class ApiServer:
             if "token" in updates["api"] and updates["api"]["token"]:
                 cfg.api.token = updates["api"]["token"]
 
+        if "schedule" in updates:
+            from models.config import ScheduleEntry
+            s = updates["schedule"]
+            if "enabled" in s:
+                cfg.schedule.enabled = s["enabled"]
+            if "entries" in s:
+                cfg.schedule.entries = [
+                    ScheduleEntry(
+                        time=e.get("time", ""),
+                        url=e.get("url", ""),
+                        enabled=e.get("enabled", True),
+                    )
+                    for e in s["entries"]
+                ]
+
+        cfg.validate()
         cfg.save()
         if self.on_config_updated:
             self.on_config_updated(cfg)
@@ -625,12 +676,14 @@ class ApiServer:
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
         """WebSocket endpoint for real-time data + mic audio."""
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=30.0, autoping=True)
         await ws.prepare(request)
 
-        self._ws_clients.add(ws)
+        async with self._ws_lock:
+            self._ws_clients.add(ws)
+            count = len(self._ws_clients)
         self.broadcast_log(
-            f"Mobile client connected ({len(self._ws_clients)} ws clients)", "info"
+            f"Mobile client connected ({count} ws clients)", "info"
         )
 
         try:
@@ -645,13 +698,19 @@ class ApiServer:
                         data = json.loads(msg.data)
                         await self._handle_ws_message(ws, data)
                     except json.JSONDecodeError:
-                        pass
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "Invalid JSON from WebSocket client: %s",
+                            msg.data[:200] if msg.data else "(empty)"
+                        )
                 elif msg.type in (web.WSMsgType.ERROR, web.WSMsgType.CLOSE):
                     break
         finally:
-            self._ws_clients.discard(ws)
+            async with self._ws_lock:
+                self._ws_clients.discard(ws)
+                count = len(self._ws_clients)
             self.broadcast_log(
-                f"Mobile client disconnected ({len(self._ws_clients)} ws clients)",
+                f"Mobile client disconnected ({count} ws clients)",
                 "info",
             )
 
@@ -673,9 +732,10 @@ class ApiServer:
         if not self._ws_clients:
             return
         text = json.dumps(data)
-        # Schedule sends on the event loop
+        # Use snapshot to avoid concurrent modification
+        clients_snapshot = list(self._ws_clients)
         dead = set()
-        for ws in self._ws_clients:
+        for ws in clients_snapshot:
             if ws.closed:
                 dead.add(ws)
                 continue
@@ -683,7 +743,8 @@ class ApiServer:
                 asyncio.ensure_future(ws.send_str(text))
             except (ConnectionError, RuntimeError):
                 dead.add(ws)
-        self._ws_clients -= dead
+        if dead:
+            self._ws_clients -= dead
 
 
 class BonjourAdvertiser:

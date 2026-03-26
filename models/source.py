@@ -49,6 +49,12 @@ class SourceManager:
             return self._sources[index]
         return None
 
+    def get_by_name(self, name: str) -> Source | None:
+        for source in self._sources:
+            if source.name == name:
+                return source
+        return None
+
     def save(self) -> None:
         with open(SOURCES_FILE, "w", encoding="utf-8") as f:
             json.dump([asdict(s) for s in self._sources], f, indent=2)

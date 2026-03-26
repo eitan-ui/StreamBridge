@@ -19,9 +19,56 @@ struct SettingsView: View {
                         autoStopSection(config)
                         reconnectSection(config)
                         alertsSection(config)
-                        whatsappSection(config)
-                        mairlistSection(config)
-                        tunnelSection(config)
+
+                        Section("Schedule") {
+                            HStack {
+                                Text("Auto-Start")
+                                Spacer()
+                                Text(config.schedule.enabled.wrappedValue ? "Enabled" : "Disabled")
+                                    .foregroundStyle(config.schedule.enabled.wrappedValue ? .green : .secondary)
+                                    .font(.caption.bold())
+                            }
+                            if !config.schedule.entries.wrappedValue.isEmpty {
+                                ForEach(Array(config.schedule.entries.wrappedValue.enumerated()), id: \.offset) { _, entry in
+                                    HStack {
+                                        Image(systemName: "clock")
+                                            .foregroundStyle(.blue)
+                                        Text(entry.time)
+                                            .font(.body.monospacedDigit())
+                                        Spacer()
+                                        Text(entry.url)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        if !entry.enabled {
+                                            Image(systemName: "moon.fill")
+                                                .foregroundStyle(.orange)
+                                                .font(.caption)
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text("No scheduled times configured")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("Configure schedule from desktop app or web PWA")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        Section("Advanced") {
+                            DisclosureGroup("WhatsApp") {
+                                whatsappContent(config)
+                            }
+                            DisclosureGroup("mAirList") {
+                                mairlistContent(config)
+                            }
+                            DisclosureGroup("Internet Tunnel (SSH)") {
+                                tunnelContent(config)
+                            }
+                        }
 
                         Section {
                             Button {
@@ -162,125 +209,124 @@ struct SettingsView: View {
         }
     }
 
-    private func whatsappSection(_ config: Binding<StreamConfig>) -> some View {
-        Section("WhatsApp") {
-            Toggle("Enable WhatsApp", isOn: config.alerts.whatsapp.enabled)
-            if config.alerts.whatsapp.enabled.wrappedValue {
-                Picker("Service", selection: config.alerts.whatsapp.service) {
-                    Text("CallMeBot").tag("callmebot")
-                    Text("Twilio").tag("twilio")
-                    Text("Custom").tag("custom")
-                }
-                TextField("Phone", text: config.alerts.whatsapp.phone)
-                    .keyboardType(.phonePad)
-                TextField("API Key", text: config.alerts.whatsapp.apiKey)
+    @ViewBuilder
+    private func whatsappContent(_ config: Binding<StreamConfig>) -> some View {
+        Toggle("Enable WhatsApp", isOn: config.alerts.whatsapp.enabled)
+        if config.alerts.whatsapp.enabled.wrappedValue {
+            Picker("Service", selection: config.alerts.whatsapp.service) {
+                Text("CallMeBot").tag("callmebot")
+                Text("Twilio").tag("twilio")
+                Text("Custom").tag("custom")
             }
+            TextField("Phone", text: config.alerts.whatsapp.phone)
+                .keyboardType(.phonePad)
+            TextField("API Key", text: config.alerts.whatsapp.apiKey)
         }
     }
 
-    private func mairlistSection(_ config: Binding<StreamConfig>) -> some View {
-        Section("mAirList") {
-            Toggle("Enable mAirList", isOn: config.mairlist.enabled)
-            if config.mairlist.enabled.wrappedValue {
-                HStack {
-                    Text("API URL")
-                    Spacer()
-                    TextField("http://localhost:9000", text: config.mairlist.apiUrl)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                }
-                HStack {
-                    Text("Default Command")
-                    Spacer()
-                    TextField("PLAYER A NEXT", text: config.mairlist.command)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.characters)
-                }
-                HStack {
-                    Text("Silence Command")
-                    Spacer()
-                    TextField("PLAYER A NEXT", text: config.mairlist.silenceCommand)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.characters)
-                }
-                HStack {
-                    Text("Tone Command")
-                    Spacer()
-                    TextField("PLAYER A NEXT", text: config.mairlist.toneCommand)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.characters)
-                }
-            }
-        }
-    }
-
-    private func tunnelSection(_ config: Binding<StreamConfig>) -> some View {
-        Section("Internet Tunnel (SSH)") {
-            Toggle("Enable Tunnel", isOn: config.tunnel.enabled)
-            if config.tunnel.enabled.wrappedValue {
-                HStack {
-                    Text("VPS Host")
-                    Spacer()
-                    TextField("203.0.113.5", text: config.tunnel.host)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                }
-                HStack {
-                    Text("SSH Port")
-                    Spacer()
-                    TextField("22", value: config.tunnel.port, format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 80)
-                }
-                HStack {
-                    Text("Username")
-                    Spacer()
-                    TextField("root", text: config.tunnel.username)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                }
-                HStack {
-                    Text("Remote Port")
-                    Spacer()
-                    TextField("9000", value: config.tunnel.remotePort, format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 80)
-                }
-            }
-
-            // Tunnel status
-            if appState.tunnelStatus != "disconnected" {
-                HStack {
-                    Text("Status")
-                    Spacer()
-                    Text(appState.tunnelStatus.uppercased())
-                        .foregroundStyle(appState.tunnelStatus == "connected" ? .green :
-                                        appState.tunnelStatus == "connecting" ? .yellow : .red)
-                        .font(.caption.bold())
-                }
-                if let url = appState.tunnelPublicURL, !url.isEmpty {
-                    HStack {
-                        Text("Public URL")
-                        Spacer()
-                        Text(url)
-                            .font(.caption)
-                            .foregroundStyle(.blue)
-                    }
-                }
-            }
-
+    @ViewBuilder
+    private func mairlistContent(_ config: Binding<StreamConfig>) -> some View {
+        Toggle("Enable mAirList", isOn: config.mairlist.enabled)
+        if config.mairlist.enabled.wrappedValue {
             HStack {
-                Button("Start") {
-                    Task { try? await api.tunnelStart() }
-                }
+                Text("API URL")
                 Spacer()
-                Button("Stop") {
-                    Task { try? await api.tunnelStop() }
-                }
-                .foregroundStyle(.red)
+                TextField("http://localhost:9000", text: config.mairlist.apiUrl)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.never)
             }
+            HStack {
+                Text("Default Command")
+                Spacer()
+                TextField("PLAYER A NEXT", text: config.mairlist.command)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.characters)
+            }
+            HStack {
+                Text("Silence Command")
+                Spacer()
+                TextField("PLAYER A NEXT", text: config.mairlist.silenceCommand)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.characters)
+            }
+            HStack {
+                Text("Tone Command")
+                Spacer()
+                TextField("PLAYER A NEXT", text: config.mairlist.toneCommand)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.characters)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tunnelContent(_ config: Binding<StreamConfig>) -> some View {
+        Toggle("Enable Tunnel", isOn: config.tunnel.enabled)
+        if config.tunnel.enabled.wrappedValue {
+            HStack {
+                Text("VPS Host")
+                Spacer()
+                TextField("203.0.113.5", text: config.tunnel.host)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.never)
+            }
+            HStack {
+                Text("SSH Port")
+                Spacer()
+                TextField("22", value: config.tunnel.port, format: .number)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+            }
+            HStack {
+                Text("Username")
+                Spacer()
+                TextField("root", text: config.tunnel.username)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.never)
+            }
+            HStack {
+                Text("Remote Port")
+                Spacer()
+                TextField("9000", value: config.tunnel.remotePort, format: .number)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+            }
+        }
+
+        // Tunnel status
+        if appState.tunnelStatus != "disconnected" {
+            HStack {
+                Text("Status")
+                Spacer()
+                Text(appState.tunnelStatus.uppercased())
+                    .foregroundStyle(appState.tunnelStatus == "connected" ? .green :
+                                    appState.tunnelStatus == "connecting" ? .yellow : .red)
+                    .font(.caption.bold())
+            }
+            if let url = appState.tunnelPublicURL, !url.isEmpty {
+                HStack {
+                    Text("Public URL")
+                    Spacer()
+                    Text(url)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+
+        HStack {
+            Button("Start") {
+                Task { try? await api.tunnelStart() }
+            }
+            Spacer()
+            Button("Stop") {
+                Task { try? await api.tunnelStop() }
+            }
+            .foregroundStyle(.red)
         }
     }
 
@@ -335,6 +381,14 @@ struct SettingsView: View {
                         "silence_command": cfg.mairlist.silenceCommand,
                         "tone_command": cfg.mairlist.toneCommand,
                     ],
+                    "schedule": [
+                        "enabled": cfg.schedule.enabled,
+                        "entries": cfg.schedule.entries.map { [
+                            "time": $0.time,
+                            "url": $0.url,
+                            "enabled": $0.enabled,
+                        ] as [String: Any] },
+                    ] as [String: Any],
                     "tunnel": [
                         "enabled": cfg.tunnel.enabled,
                         "host": cfg.tunnel.host,

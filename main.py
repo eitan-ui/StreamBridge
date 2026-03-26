@@ -18,6 +18,7 @@ from models.config import Config
 from models.source import SourceManager
 from utils.logger import setup_file_logger
 from utils.ffmpeg_check import check_ffmpeg_or_prompt
+from gui.theme import load_fonts
 
 
 LOCK_FILE = None
@@ -34,7 +35,22 @@ def _acquire_lock() -> bool:
         LOCK_FILE.flush()
         return True
     except (OSError, IOError):
+        if LOCK_FILE:
+            LOCK_FILE.close()
+            LOCK_FILE = None
         return False
+
+
+def _release_lock() -> None:
+    """Release the single-instance file lock."""
+    global LOCK_FILE
+    if LOCK_FILE:
+        try:
+            fcntl.flock(LOCK_FILE, fcntl.LOCK_UN)
+            LOCK_FILE.close()
+        except OSError:
+            pass
+        LOCK_FILE = None
 
 
 def _get_icon() -> QIcon:
@@ -73,6 +89,8 @@ def main() -> None:
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)  # Tray keeps app running
+
+    load_fonts()
 
     icon = _get_icon()
     if not icon.isNull():
@@ -165,10 +183,12 @@ def main() -> None:
 
     logger.info("StreamBridge ready")
 
-    with loop:
-        loop.run_forever()
-
-    logger.info("StreamBridge stopped")
+    try:
+        with loop:
+            loop.run_forever()
+    finally:
+        _release_lock()
+        logger.info("StreamBridge stopped")
 
 
 if __name__ == "__main__":

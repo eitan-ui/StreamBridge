@@ -1,0 +1,415 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01481915A59351315038BCB8 /* MairListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA3ECCD551C4D2A635BBE60 /* MairListView.swift */; };
+		125AEC412DC63E325CF0FD0F /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF44884E6CE59A96B158CBA7 /* AppState.swift */; };
+		1E50DD428105BAC9C8B736ED /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7186537B527BAF02577CF3 /* LogView.swift */; };
+		22D01DFE2CB438DCB6440890 /* MicCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A922DBFE262480A2DCE826 /* MicCaptureService.swift */; };
+		2BC79DD7ADA5FCEF9694BC3C /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4BAEB9B2CF734C32EB80ED /* WebSocketManager.swift */; };
+		349B8492645EF02FC873E0A6 /* StreamConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26BE24C428F5FD3D9B71DBF8 /* StreamConfig.swift */; };
+		504903DF0E9FE4DCE95B9DC0 /* MicStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C728260D02844679AF2B4F /* MicStreamView.swift */; };
+		584F0E2D94F0C8A90812A671 /* AudioLevels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEC88D8EE8506131C51994B /* AudioLevels.swift */; };
+		6419D59969D24FA34058F34C /* ConnectionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D97C95B6D1607956D5863 /* ConnectionStatus.swift */; };
+		770D1B61E86AA512A559C80F /* PlaylistItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217157AB1DF78A804B1C01EA /* PlaylistItem.swift */; };
+		8531C1E080E7D6FE00E894BE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A48528688B233A2BCB664B /* SettingsView.swift */; };
+		8BC6D3A2945C852ABD6482E2 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90369C7FA66416CEF8ADBC4 /* ConnectView.swift */; };
+		8DA1A1848C2852CC09CDCD15 /* SourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78216118F292360E0FCE4005 /* SourcesView.swift */; };
+		9AE459A66CE518BE93E7CDF0 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5451CA23FA0144ED5AB945 /* DashboardView.swift */; };
+		9DC197F53B32710AD800359C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ACB31E20366E8FFED7C427B5 /* Assets.xcassets */; };
+		B0849E2836604D9E753EE85B /* StreamBridgeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3012DC95D0F20108BACA9930 /* StreamBridgeAPI.swift */; };
+		B3A65C22CE00ECFA1F9023E7 /* ConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 697A7516AE57444A87BEFD1A /* ConnectionManager.swift */; };
+		B425A54324FCD73CD2AE19FA /* LevelMeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92529370079D9333B9EA99C4 /* LevelMeterView.swift */; };
+		F1E320A374A3D180E0CE7F3A /* Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FDF5A391BC323E2730BFF7 /* Source.swift */; };
+		F82E36B10DC833E17F476224 /* StreamBridgeMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44702FCD2F169FC705E8B77E /* StreamBridgeMobileApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		04A48528688B233A2BCB664B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		20FDF5A391BC323E2730BFF7 /* Source.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Source.swift; sourceTree = "<group>"; };
+		217157AB1DF78A804B1C01EA /* PlaylistItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistItem.swift; sourceTree = "<group>"; };
+		26BE24C428F5FD3D9B71DBF8 /* StreamConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamConfig.swift; sourceTree = "<group>"; };
+		2C5451CA23FA0144ED5AB945 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		3012DC95D0F20108BACA9930 /* StreamBridgeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamBridgeAPI.swift; sourceTree = "<group>"; };
+		44702FCD2F169FC705E8B77E /* StreamBridgeMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamBridgeMobileApp.swift; sourceTree = "<group>"; };
+		697A7516AE57444A87BEFD1A /* ConnectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionManager.swift; sourceTree = "<group>"; };
+		6B7D97C95B6D1607956D5863 /* ConnectionStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStatus.swift; sourceTree = "<group>"; };
+		78216118F292360E0FCE4005 /* SourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesView.swift; sourceTree = "<group>"; };
+		89C728260D02844679AF2B4F /* MicStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicStreamView.swift; sourceTree = "<group>"; };
+		8FEC88D8EE8506131C51994B /* AudioLevels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevels.swift; sourceTree = "<group>"; };
+		92529370079D9333B9EA99C4 /* LevelMeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelMeterView.swift; sourceTree = "<group>"; };
+		A90369C7FA66416CEF8ADBC4 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		AB7186537B527BAF02577CF3 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
+		ACB31E20366E8FFED7C427B5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B9A922DBFE262480A2DCE826 /* MicCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicCaptureService.swift; sourceTree = "<group>"; };
+		BF44884E6CE59A96B158CBA7 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		CD0BE5636BECB06C5BA7172F /* StreamBridgeMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = StreamBridgeMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CD939279F5B2FC15C88FB59C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CEA3ECCD551C4D2A635BBE60 /* MairListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MairListView.swift; sourceTree = "<group>"; };
+		FB4BAEB9B2CF734C32EB80ED /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		3E8FE7AF6343B7CB01925169 /* StreamBridgeMobile */ = {
+			isa = PBXGroup;
+			children = (
+				ACB31E20366E8FFED7C427B5 /* Assets.xcassets */,
+				CD939279F5B2FC15C88FB59C /* Info.plist */,
+				44702FCD2F169FC705E8B77E /* StreamBridgeMobileApp.swift */,
+				E9D4C35E72121712A49FCE1C /* Models */,
+				F92A84AC92D1D2A9D53F0E5B /* Services */,
+				D876904D6A5E3B1B1E3C4743 /* Views */,
+			);
+			path = StreamBridgeMobile;
+			sourceTree = "<group>";
+		};
+		9738BB8E949527E163D59E10 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CD0BE5636BECB06C5BA7172F /* StreamBridgeMobile.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9AD6D600DF195C9F955DD146 = {
+			isa = PBXGroup;
+			children = (
+				3E8FE7AF6343B7CB01925169 /* StreamBridgeMobile */,
+				9738BB8E949527E163D59E10 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D876904D6A5E3B1B1E3C4743 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A90369C7FA66416CEF8ADBC4 /* ConnectView.swift */,
+				2C5451CA23FA0144ED5AB945 /* DashboardView.swift */,
+				92529370079D9333B9EA99C4 /* LevelMeterView.swift */,
+				AB7186537B527BAF02577CF3 /* LogView.swift */,
+				CEA3ECCD551C4D2A635BBE60 /* MairListView.swift */,
+				89C728260D02844679AF2B4F /* MicStreamView.swift */,
+				04A48528688B233A2BCB664B /* SettingsView.swift */,
+				78216118F292360E0FCE4005 /* SourcesView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E9D4C35E72121712A49FCE1C /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				BF44884E6CE59A96B158CBA7 /* AppState.swift */,
+				8FEC88D8EE8506131C51994B /* AudioLevels.swift */,
+				6B7D97C95B6D1607956D5863 /* ConnectionStatus.swift */,
+				217157AB1DF78A804B1C01EA /* PlaylistItem.swift */,
+				20FDF5A391BC323E2730BFF7 /* Source.swift */,
+				26BE24C428F5FD3D9B71DBF8 /* StreamConfig.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		F92A84AC92D1D2A9D53F0E5B /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				697A7516AE57444A87BEFD1A /* ConnectionManager.swift */,
+				B9A922DBFE262480A2DCE826 /* MicCaptureService.swift */,
+				3012DC95D0F20108BACA9930 /* StreamBridgeAPI.swift */,
+				FB4BAEB9B2CF734C32EB80ED /* WebSocketManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E8DDC2E5DEF072DF51059514 /* StreamBridgeMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CF1A3D0460AB9E1DEADDBD19 /* Build configuration list for PBXNativeTarget "StreamBridgeMobile" */;
+			buildPhases = (
+				EE41680F8C801B59BEA45FDF /* Sources */,
+				80384B248CF0A1362E947CA1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = StreamBridgeMobile;
+			packageProductDependencies = (
+			);
+			productName = StreamBridgeMobile;
+			productReference = CD0BE5636BECB06C5BA7172F /* StreamBridgeMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A63B1EC236FC98336EF48F61 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					E8DDC2E5DEF072DF51059514 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 9BAD3A2B477FBF1205C494AD /* Build configuration list for PBXProject "StreamBridgeMobile" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9AD6D600DF195C9F955DD146;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9738BB8E949527E163D59E10 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E8DDC2E5DEF072DF51059514 /* StreamBridgeMobile */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		80384B248CF0A1362E947CA1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9DC197F53B32710AD800359C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		EE41680F8C801B59BEA45FDF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				125AEC412DC63E325CF0FD0F /* AppState.swift in Sources */,
+				584F0E2D94F0C8A90812A671 /* AudioLevels.swift in Sources */,
+				8BC6D3A2945C852ABD6482E2 /* ConnectView.swift in Sources */,
+				B3A65C22CE00ECFA1F9023E7 /* ConnectionManager.swift in Sources */,
+				6419D59969D24FA34058F34C /* ConnectionStatus.swift in Sources */,
+				9AE459A66CE518BE93E7CDF0 /* DashboardView.swift in Sources */,
+				B425A54324FCD73CD2AE19FA /* LevelMeterView.swift in Sources */,
+				1E50DD428105BAC9C8B736ED /* LogView.swift in Sources */,
+				01481915A59351315038BCB8 /* MairListView.swift in Sources */,
+				22D01DFE2CB438DCB6440890 /* MicCaptureService.swift in Sources */,
+				504903DF0E9FE4DCE95B9DC0 /* MicStreamView.swift in Sources */,
+				770D1B61E86AA512A559C80F /* PlaylistItem.swift in Sources */,
+				8531C1E080E7D6FE00E894BE /* SettingsView.swift in Sources */,
+				F1E320A374A3D180E0CE7F3A /* Source.swift in Sources */,
+				8DA1A1848C2852CC09CDCD15 /* SourcesView.swift in Sources */,
+				B0849E2836604D9E753EE85B /* StreamBridgeAPI.swift in Sources */,
+				F82E36B10DC833E17F476224 /* StreamBridgeMobileApp.swift in Sources */,
+				349B8492645EF02FC873E0A6 /* StreamConfig.swift in Sources */,
+				2BC79DD7ADA5FCEF9694BC3C /* WebSocketManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		23F8422F69EF75291BFD7A52 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StreamBridgeMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.streambridge.mobile;
+				SDKROOT = iphoneos;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		2DF806F84D53CC253466313F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		5D654961453BD5E103082F9E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		F0E9AF9ECDD50DCDE87E7D37 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StreamBridgeMobile/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.streambridge.mobile;
+				SDKROOT = iphoneos;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9BAD3A2B477FBF1205C494AD /* Build configuration list for PBXProject "StreamBridgeMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D654961453BD5E103082F9E /* Debug */,
+				2DF806F84D53CC253466313F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CF1A3D0460AB9E1DEADDBD19 /* Build configuration list for PBXNativeTarget "StreamBridgeMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				23F8422F69EF75291BFD7A52 /* Debug */,
+				F0E9AF9ECDD50DCDE87E7D37 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A63B1EC236FC98336EF48F61 /* Project object */;
+}

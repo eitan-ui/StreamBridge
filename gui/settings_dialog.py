@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QGroupBox, QFormLayout, QTabWidget, QWidget,
     QFileDialog, QTextEdit, QMessageBox, QScrollArea,
@@ -9,116 +9,19 @@ from PyQt6.QtCore import Qt
 from models.config import (
     Config, WhatsAppConfig, AlertConfig, SilenceConfig, ReconnectConfig,
     SilenceAutoStopConfig, MairListConfig, ApiConfig, TunnelConfig,
+    ScheduleConfig,
 )
+from gui.theme import (
+    FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    ACCENT, SUCCESS, ERROR, FONT_SM, FONT_MD, SPACING_MD, INPUT_BG,
+    DIALOG_BORDER,
+)
+from gui.frameless import FramelessDialog
 
 
-SETTINGS_STYLE = """
-QDialog {
-    background-color: #1a1a2e;
-    color: #e0e0e0;
-}
-QTabWidget::pane {
-    border: 1px solid #252545;
-    background-color: #1a1a2e;
-    border-radius: 4px;
-}
-QTabBar::tab {
-    background-color: #16213e;
-    color: #7f8fa6;
-    padding: 8px 10px;
-    border: 1px solid #252545;
-    border-bottom: none;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-}
-QTabBar::tab:selected {
-    background-color: #1a1a2e;
-    color: #e0e0e0;
-}
-QTabBar {
-    qproperty-expanding: false;
-}
-QGroupBox {
-    border: 1px solid #252545;
-    border-radius: 4px;
-    margin-top: 10px;
-    padding-top: 10px;
-    color: #7f8fa6;
-    font-size: 11px;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    padding: 0 6px;
-}
-QLabel {
-    color: #e0e0e0;
-    background: transparent;
-    font-size: 12px;
-}
-QLineEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    padding: 5px 8px;
-    color: #e0e0e0;
-    font-size: 12px;
-}
-QComboBox {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    padding: 5px 8px;
-    color: #e0e0e0;
-}
-QComboBox QAbstractItemView {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    color: #e0e0e0;
-    selection-background-color: #0f3460;
-}
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-    border-color: #3498db;
-}
-QCheckBox {
-    color: #e0e0e0;
-    font-size: 12px;
-    spacing: 8px;
-}
-QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border: 1px solid #3a3a5c;
-    border-radius: 3px;
-    background-color: #16213e;
-}
-QCheckBox::indicator:checked {
-    background-color: #27ae60;
-    border-color: #27ae60;
-}
-QPushButton {
-    background-color: #0f3460;
-    color: #e0e0e0;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 20px;
-    font-size: 12px;
-}
-QPushButton:hover {
-    background-color: #1a5276;
-}
-QPushButton#saveBtn {
-    background-color: #27ae60;
-    color: white;
-}
-QPushButton#saveBtn:hover {
-    background-color: #2ecc71;
-}
-"""
-
-
-class SettingsDialog(QDialog):
+class SettingsDialog(FramelessDialog):
     def __init__(self, config: Config, parent=None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, title="Settings")
         self._config = Config(
             port=config.port,
             audio_input_device=config.audio_input_device,
@@ -158,28 +61,40 @@ class SettingsDialog(QDialog):
                 command=config.mairlist.command,
                 silence_command=config.mairlist.silence_command,
                 tone_command=config.mairlist.tone_command,
+                action_next=config.mairlist.action_next,
+                action_delete_item=config.mairlist.action_delete_item,
+                action_change_timing=config.mairlist.action_change_timing,
+                action_timing_value=config.mairlist.action_timing_value,
+                action_player=config.mairlist.action_player,
+                action_playlist=config.mairlist.action_playlist,
             ),
             api=ApiConfig(
                 token=config.api.token,
                 allow_remote=config.api.allow_remote,
             ),
+            schedule=ScheduleConfig(
+                enabled=config.schedule.enabled,
+                entries=list(config.schedule.entries),
+                keep_playing_on_gap=config.schedule.keep_playing_on_gap,
+            ),
         )
 
-        self.setWindowTitle("Settings")
-        self.setFixedSize(680, 720)
-        self.setStyleSheet(SETTINGS_STYLE)
+        self.setFixedSize(700, 780)
 
-        layout = QVBoxLayout(self)
+        layout = self.content_layout
         layout.setSpacing(10)
 
         # Tabs
         tabs = QTabWidget()
+        tabs.tabBar().setExpanding(True)
+        tabs.setUsesScrollButtons(False)
         tabs.addTab(self._create_network_tab(), "Network")
         tabs.addTab(self._create_audio_tab(), "Audio")
         tabs.addTab(self._create_silence_tab(), "Silence")
         tabs.addTab(self._create_reconnect_tab(), "Reconnect")
         tabs.addTab(self._create_alerts_tab(), "Alerts")
         tabs.addTab(self._create_mairlist_tab(), "mAirList")
+        tabs.addTab(self._create_schedule_tab(), "Schedule")
         tabs.addTab(self._create_remote_tab(), "Remote")
         layout.addWidget(tabs)
 
@@ -233,7 +148,7 @@ class SettingsDialog(QDialog):
         # Detection thresholds
         detect_group = QGroupBox("Detection")
         form = QFormLayout(detect_group)
-        form.setSpacing(8)
+        form.setSpacing(SPACING_MD)
 
         self._threshold_spin = QDoubleSpinBox()
         self._threshold_spin.setRange(-80.0, 0.0)
@@ -258,7 +173,7 @@ class SettingsDialog(QDialog):
         # Auto-stop settings
         auto_group = QGroupBox("Auto-Stop & mAirList Trigger")
         auto_form = QFormLayout(auto_group)
-        auto_form.setSpacing(8)
+        auto_form.setSpacing(SPACING_MD)
 
         self._auto_stop_check = QCheckBox("Enable auto-stop on silence/tone")
         self._auto_stop_check.setChecked(self._config.silence.auto_stop.enabled)
@@ -343,7 +258,7 @@ class SettingsDialog(QDialog):
         # WhatsApp section
         wa_group = QGroupBox("WhatsApp Notifications")
         wa_layout = QFormLayout(wa_group)
-        wa_layout.setSpacing(8)
+        wa_layout.setSpacing(SPACING_MD)
 
         self._wa_enabled_check = QCheckBox("Enable WhatsApp alerts")
         self._wa_enabled_check.setChecked(self._config.alerts.whatsapp.enabled)
@@ -377,12 +292,20 @@ class SettingsDialog(QDialog):
 
     def _create_mairlist_tab(self) -> QWidget:
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(12)
 
         ml_group = QGroupBox("mAirList Remote Control")
         ml_form = QFormLayout(ml_group)
-        ml_form.setSpacing(8)
+        ml_form.setSpacing(SPACING_MD)
 
         self._ml_enabled_check = QCheckBox("Enable mAirList integration")
         self._ml_enabled_check.setChecked(self._config.mairlist.enabled)
@@ -401,40 +324,97 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(ml_group)
 
-        # Separate commands for silence vs tone
-        cmd_group = QGroupBox("Detection-Specific Commands")
+        # Auto-stop actions
+        actions_group = QGroupBox("Actions on Silence/Tone Detection")
+        actions_form = QFormLayout(actions_group)
+        actions_form.setSpacing(SPACING_MD)
+
+        self._ml_action_next_check = QCheckBox("Skip to next item (PLAYER NEXT)")
+        self._ml_action_next_check.setChecked(self._config.mairlist.action_next)
+        actions_form.addRow(self._ml_action_next_check)
+
+        self._ml_action_delete_check = QCheckBox("Delete current item from playlist")
+        self._ml_action_delete_check.setChecked(self._config.mairlist.action_delete_item)
+        actions_form.addRow(self._ml_action_delete_check)
+
+        self._ml_action_timing_check = QCheckBox("Change item Timing property")
+        self._ml_action_timing_check.setChecked(self._config.mairlist.action_change_timing)
+        actions_form.addRow(self._ml_action_timing_check)
+
+        self._ml_timing_combo = QComboBox()
+        for val in ("Normal", "Hard fixed time", "Soft fixed time",
+                     "Backtimed", "Fixed", "Excluded from backtiming"):
+            self._ml_timing_combo.addItem(val, val)
+        idx = self._ml_timing_combo.findData(self._config.mairlist.action_timing_value)
+        if idx >= 0:
+            self._ml_timing_combo.setCurrentIndex(idx)
+        actions_form.addRow("Timing value:", self._ml_timing_combo)
+
+        self._ml_player_combo = QComboBox()
+        for p in ("A", "B", "C", "D"):
+            self._ml_player_combo.addItem(f"Player {p}", p)
+        idx = self._ml_player_combo.findData(self._config.mairlist.action_player)
+        if idx >= 0:
+            self._ml_player_combo.setCurrentIndex(idx)
+        actions_form.addRow("Target player:", self._ml_player_combo)
+
+        self._ml_playlist_spin = QSpinBox()
+        self._ml_playlist_spin.setRange(1, 10)
+        self._ml_playlist_spin.setValue(self._config.mairlist.action_playlist)
+        actions_form.addRow("Target playlist:", self._ml_playlist_spin)
+
+        layout.addWidget(actions_group)
+
+        # Custom commands (advanced)
+        cmd_group = QGroupBox("Custom Commands (Advanced)")
         cmd_form = QFormLayout(cmd_group)
-        cmd_form.setSpacing(8)
+        cmd_form.setSpacing(SPACING_MD)
 
         self._ml_silence_cmd_input = QLineEdit(self._config.mairlist.silence_command)
-        self._ml_silence_cmd_input.setPlaceholderText("PLAYER A NEXT")
-        self._ml_silence_cmd_input.setToolTip(
-            "Command sent when SILENCE is detected.\n"
-            "Example: PLAYER A NEXT"
-        )
+        self._ml_silence_cmd_input.setPlaceholderText("Optional extra command on silence")
         cmd_form.addRow("Silence command:", self._ml_silence_cmd_input)
 
         self._ml_tone_cmd_input = QLineEdit(self._config.mairlist.tone_command)
-        self._ml_tone_cmd_input.setPlaceholderText("PLAYER A NEXT")
-        self._ml_tone_cmd_input.setToolTip(
-            "Command sent when a TONE is detected.\n"
-            "Example: PLAYER A NEXT"
-        )
+        self._ml_tone_cmd_input.setPlaceholderText("Optional extra command on tone")
         cmd_form.addRow("Tone command:", self._ml_tone_cmd_input)
 
         layout.addWidget(cmd_group)
 
         info_label = QLabel(
-            "Configure the mAirList HTTP remote control API.\n"
-            "Enable it in mAirList: Config > Remote Control > HTTP Server.\n\n"
-            "You can set different commands for silence vs tone detection.\n"
-            "If a specific command is empty, the default command is used.\n\n"
-            "Common commands:\n"
-            "  PLAYER A NEXT — advance to next playlist item\n"
-            "  PLAYLIST 1 START — start playlist from current position\n"
-            "  PLAYER A STOP — stop the current player"
+            "Actions execute in order: Change Timing → Delete Item → Next Player → Custom Command.\n\n"
+            "Enable mAirList HTTP remote: Config > Remote Control > HTTP Server."
         )
-        info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
+        info_label.setStyleSheet(f"font-size: {FONT_SM + 1}px; color: {TEXT_SECONDARY}; line-height: 1.5;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+
+        scroll.setWidget(content)
+        tab_layout.addWidget(scroll)
+        return tab
+
+    def _create_schedule_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+
+        self._schedule_enabled_check = QCheckBox("Enable scheduled auto-start")
+        self._schedule_enabled_check.setChecked(self._config.schedule.enabled)
+        layout.addWidget(self._schedule_enabled_check)
+
+        self._keep_playing_check = QCheckBox("Keep stream playing when no next entry")
+        self._keep_playing_check.setChecked(self._config.schedule.keep_playing_on_gap)
+        layout.addWidget(self._keep_playing_check)
+
+        info_label = QLabel(
+            "Schedule stream auto-start at specific times.\n"
+            "When triggered, StreamBridge starts the configured stream URL\n"
+            "with silence/tone detection active.\n\n"
+            'Use the Stream Control button on the main window\n'
+            "to manage schedule entries, days, and time slots."
+        )
+        info_label.setStyleSheet(f"font-size: {FONT_SM + 1}px; color: {TEXT_SECONDARY}; line-height: 1.5;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -456,7 +436,7 @@ class SettingsDialog(QDialog):
 
         remote_group = QGroupBox("Remote Access (Mobile App)")
         remote_form = QFormLayout(remote_group)
-        remote_form.setSpacing(8)
+        remote_form.setSpacing(SPACING_MD)
 
         self._allow_remote_check = QCheckBox("Allow remote connections")
         self._allow_remote_check.setChecked(self._config.api.allow_remote)
@@ -492,7 +472,7 @@ class SettingsDialog(QDialog):
             local_ip = "127.0.0.1"
 
         ip_label = QLabel(f"Local IP: {local_ip}:{self._config.port}")
-        ip_label.setStyleSheet("font-size: 12px; color: #3498db; font-family: 'Consolas', monospace;")
+        ip_label.setStyleSheet(f"font-size: {FONT_MD}px; color: {ACCENT}; font-family: {FONT_MONO};")
         remote_form.addRow("Connect from app:", ip_label)
 
         layout.addWidget(remote_group)
@@ -500,7 +480,7 @@ class SettingsDialog(QDialog):
         # --- Internet Tunnel (SSH) ---
         tunnel_group = QGroupBox("Internet Tunnel (SSH)")
         tunnel_form = QFormLayout(tunnel_group)
-        tunnel_form.setSpacing(8)
+        tunnel_form.setSpacing(SPACING_MD)
 
         self._tunnel_enabled_check = QCheckBox("Enable SSH tunnel")
         self._tunnel_enabled_check.setChecked(self._config.tunnel.enabled)
@@ -544,8 +524,8 @@ class SettingsDialog(QDialog):
         self._pubkey_display.setReadOnly(True)
         self._pubkey_display.setMaximumHeight(60)
         self._pubkey_display.setStyleSheet(
-            "font-size: 10px; font-family: 'Consolas', monospace; "
-            "background-color: #16213e; border: 1px solid #252545;"
+            f"font-size: {FONT_SM}px; font-family: {FONT_MONO}; "
+            f"background-color: rgba(16, 24, 48, 0.95); border: 1px solid rgba(255, 255, 255, 0.06);"
         )
         self._pubkey_display.setPlaceholderText(
             "Click 'Generate Key Pair' to create a new key, "
@@ -578,7 +558,7 @@ class SettingsDialog(QDialog):
             "   ~/.ssh/authorized_keys on your VPS\n"
             "4. Enter your VPS details and enable the tunnel"
         )
-        info_label.setStyleSheet("font-size: 11px; color: #7f8fa6;")
+        info_label.setStyleSheet(f"font-size: {FONT_SM + 1}px; color: {TEXT_SECONDARY}; line-height: 1.5;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -654,6 +634,12 @@ class SettingsDialog(QDialog):
         self._config.mairlist.command = self._ml_command_input.text().strip()
         self._config.mairlist.silence_command = self._ml_silence_cmd_input.text().strip()
         self._config.mairlist.tone_command = self._ml_tone_cmd_input.text().strip()
+        self._config.mairlist.action_next = self._ml_action_next_check.isChecked()
+        self._config.mairlist.action_delete_item = self._ml_action_delete_check.isChecked()
+        self._config.mairlist.action_change_timing = self._ml_action_timing_check.isChecked()
+        self._config.mairlist.action_timing_value = self._ml_timing_combo.currentData()
+        self._config.mairlist.action_player = self._ml_player_combo.currentData()
+        self._config.mairlist.action_playlist = self._ml_playlist_spin.value()
 
         self._config.api.token = self._api_token_input.text().strip()
         self._config.api.allow_remote = self._allow_remote_check.isChecked()
@@ -664,5 +650,9 @@ class SettingsDialog(QDialog):
         self._config.tunnel.username = self._tunnel_user_input.text().strip()
         self._config.tunnel.key_path = self._tunnel_key_input.text().strip()
         self._config.tunnel.remote_port = self._tunnel_remote_port_spin.value()
+
+        # Schedule (entries managed via Stream Control dialog, only toggles here)
+        self._config.schedule.enabled = self._schedule_enabled_check.isChecked()
+        self._config.schedule.keep_playing_on_gap = self._keep_playing_check.isChecked()
 
         return self._config

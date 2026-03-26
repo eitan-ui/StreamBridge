@@ -167,20 +167,22 @@ struct MairListView: View {
                 }
 
                 // Timing info
-                HStack(spacing: 8) {
-                    timingBadge("In", value: item.cueIn)
-                    timingBadge("Out", value: item.cueOut)
-                    timingBadge("Fade", value: item.fadeOut)
-                    if !item.hardFixTime.isEmpty {
-                        timingBadge("Fix", value: item.hardFixTime, color: .red)
-                    }
-                    if !item.itemType.isEmpty {
-                        Text(item.itemType)
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.blue.opacity(0.2))
-                            .cornerRadius(3)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        timingBadge("In", value: item.cueIn)
+                        timingBadge("Out", value: item.cueOut)
+                        timingBadge("Fade", value: item.fadeOut)
+                        if !item.hardFixTime.isEmpty {
+                            timingBadge("Fix", value: item.hardFixTime, color: .red)
+                        }
+                        if !item.itemType.isEmpty {
+                            Text(item.itemType)
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(.blue.opacity(0.2))
+                                .cornerRadius(3)
+                        }
                     }
                 }
             }

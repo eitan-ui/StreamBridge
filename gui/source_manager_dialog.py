@@ -1,80 +1,31 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QListWidget, QListWidgetItem, QDialogButtonBox,
     QMessageBox,
 )
 from PyQt6.QtCore import Qt
 
 from models.source import SourceManager, Source
+from gui.theme import (
+    FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    ACCENT, SUCCESS, ERROR, FONT_SM, FONT_MD, SPACING_MD,
+)
+from gui.frameless import FramelessDialog
 
 
-DIALOG_STYLE = """
-QDialog {
-    background-color: #1a1a2e;
-    color: #e0e0e0;
-}
-QLabel {
-    color: #e0e0e0;
-    background: transparent;
-}
-QLineEdit {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    padding: 7px 10px;
-    color: #e0e0e0;
-    font-size: 12px;
-}
-QListWidget {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    color: #e0e0e0;
-    font-size: 12px;
-    padding: 4px;
-}
-QListWidget::item {
-    padding: 6px;
-    border-radius: 3px;
-}
-QListWidget::item:selected {
-    background-color: #0f3460;
-}
-QPushButton {
-    background-color: #0f3460;
-    color: #e0e0e0;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 16px;
-    font-size: 12px;
-}
-QPushButton:hover {
-    background-color: #1a5276;
-}
-QPushButton#dangerBtn {
-    background-color: #7b241c;
-}
-QPushButton#dangerBtn:hover {
-    background-color: #c0392b;
-}
-"""
-
-
-class SaveSourceDialog(QDialog):
+class SaveSourceDialog(FramelessDialog):
     """Simple dialog to save a new source with a name."""
 
     def __init__(self, url: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Save Source")
-        self.setFixedWidth(350)
-        self.setStyleSheet(DIALOG_STYLE)
+        super().__init__(parent, title="Save Source")
+        self.setFixedWidth(400)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout = self.content_layout
+        layout.setSpacing(SPACING_MD + 2)
 
         layout.addWidget(QLabel("URL:"))
         url_label = QLabel(url)
-        url_label.setStyleSheet("color: #3498db; font-size: 11px;")
+        url_label.setStyleSheet(f"color: {ACCENT}; font-size: {FONT_SM}px;")
         url_label.setWordWrap(True)
         layout.addWidget(url_label)
 
@@ -88,7 +39,7 @@ class SaveSourceDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
         save_btn = QPushButton("Save")
-        save_btn.setStyleSheet("background-color: #27ae60; color: white;")
+        save_btn.setObjectName("saveBtn")
         save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(save_btn)
         layout.addLayout(btn_row)
@@ -101,18 +52,16 @@ class SaveSourceDialog(QDialog):
         return self._name_input.text().strip()
 
 
-class SourceManagerDialog(QDialog):
+class SourceManagerDialog(FramelessDialog):
     """Dialog to manage saved sources: add, edit, delete, reorder."""
 
     def __init__(self, source_manager: SourceManager, parent=None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, title="Manage Sources")
         self._source_manager = source_manager
-        self.setWindowTitle("Manage Sources")
-        self.setFixedSize(450, 400)
-        self.setStyleSheet(DIALOG_STYLE)
+        self.setFixedSize(500, 480)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout = self.content_layout
+        layout.setSpacing(SPACING_MD + 2)
 
         # Source list
         self._list = QListWidget()

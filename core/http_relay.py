@@ -170,6 +170,7 @@ class HttpRelay(QObject):
         self._pcm_buffer = RingBuffer(max_seconds=0.2)
         self._audio_chunks: asyncio.Queue = asyncio.Queue(maxsize=30)
         self._clients: Set[web.StreamResponse] = set()
+        self._clients_lock = threading.Lock()  # Protects _clients from cross-thread access
         self._encoder: AudioEncoder | None = None
         self._running = False
         self._encoder_restarts = 0
@@ -185,7 +186,8 @@ class HttpRelay(QObject):
 
     @property
     def client_count(self) -> int:
-        return len(self._clients)
+        with self._clients_lock:
+            return len(self._clients)
 
     def feed_audio(self, pcm_data: bytes) -> None:
         """Feed raw PCM audio data to the relay."""
@@ -242,12 +244,15 @@ class HttpRelay(QObject):
         """Stop the HTTP relay server."""
         self._running = False
 
-        for client in list(self._clients):
+        with self._clients_lock:
+            clients_snapshot = list(self._clients)
+        for client in clients_snapshot:
             try:
                 await client.write_eof()
             except Exception:
                 pass
-        self._clients.clear()
+        with self._clients_lock:
+            self._clients.clear()
 
         if self._encoder:
             self._encoder.stop()
@@ -276,12 +281,15 @@ class HttpRelay(QObject):
             return True
         if not self._running:
             return False
-        # Encoder crashed — restart it
+        # Encoder crashed — stop old one cleanly, clear stale PCM, restart
         self._encoder_restarts += 1
         self.log_message.emit(
             f"Encoder restarted (#{self._encoder_restarts})"
         )
         try:
+            if self._encoder:
+                self._encoder.stop()
+            self._pcm_buffer.clear()
             self._encoder.start()
             return self._encoder.alive
         except (FileNotFoundError, OSError):
@@ -307,7 +315,9 @@ class HttpRelay(QObject):
                 # No audio data — feed silence to keep stream alive
                 silence_counter += 1
                 # Only feed silence when clients are connected
-                if self._clients:
+                with self._clients_lock:
+                    has_clients = bool(self._clients)
+                if has_clients:
                     if not self._encoder.write_pcm(SILENCE_FRAME):
                         time.sleep(0.01)
                         continue
@@ -357,9 +367,11 @@ class HttpRelay(QObject):
         )
         await response.prepare(request)
 
-        self._clients.add(response)
-        self.client_count_changed.emit(len(self._clients))
-        self.log_message.emit(f"Client connected ({len(self._clients)} total)")
+        with self._clients_lock:
+            self._clients.add(response)
+            count = len(self._clients)
+        self.client_count_changed.emit(count)
+        self.log_message.emit(f"Client connected ({count} total)")
 
         try:
             while self._running:
@@ -376,18 +388,22 @@ class HttpRelay(QObject):
                         ConnectionAbortedError, BrokenPipeError):
                     break
         finally:
-            self._clients.discard(response)
-            self.client_count_changed.emit(len(self._clients))
+            with self._clients_lock:
+                self._clients.discard(response)
+                count = len(self._clients)
+            self.client_count_changed.emit(count)
             self.log_message.emit(
-                f"Client disconnected ({len(self._clients)} total)"
+                f"Client disconnected ({count} total)"
             )
 
         return response
 
     async def _handle_status(self, request: web.Request) -> web.Response:
+        with self._clients_lock:
+            client_count = len(self._clients)
         return web.json_response({
             "status": "running",
-            "clients": len(self._clients),
+            "clients": client_count,
             "buffer_bytes": self._pcm_buffer.available,
             "encoder_restarts": self._encoder_restarts,
         })

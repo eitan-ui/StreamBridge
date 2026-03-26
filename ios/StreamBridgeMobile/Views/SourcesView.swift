@@ -35,6 +35,7 @@ struct SourcesView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                     if !source.notes.isEmpty {
                                         Text(source.notes)
                                             .font(.caption2)

@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#08080e">
   <title>StreamBridge</title>
   <link rel="manifest" href="/app/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app/static/style.css">
 </head>
 <body>
@@ -173,17 +176,17 @@
   <div class="setting-group">
     <div class="setting-group-title">Network</div>
     <div class="card">
-      <div class="setting-row"><span class="setting-label">Port</span><input id="set-port" type="number" style="width:80px;text-align:right"></div>
-      <div class="setting-row"><span class="setting-label">Opus Bitrate (kbps)</span><input id="set-bitrate" type="number" style="width:80px;text-align:right"></div>
+      <div class="setting-row"><span class="setting-label">Port</span><input id="set-port" type="number" class="setting-input"></div>
+      <div class="setting-row"><span class="setting-label">Opus Bitrate (kbps)</span><input id="set-bitrate" type="number" class="setting-input"></div>
     </div>
   </div>
 
   <div class="setting-group">
     <div class="setting-group-title">Silence Detection</div>
     <div class="card">
-      <div class="setting-row"><span class="setting-label">Threshold (dB)</span><input id="set-threshold" type="number" style="width:80px;text-align:right"></div>
-      <div class="setting-row"><span class="setting-label">Warning delay (s)</span><input id="set-warn-delay" type="number" style="width:80px;text-align:right"></div>
-      <div class="setting-row"><span class="setting-label">Alert delay (s)</span><input id="set-alert-delay" type="number" style="width:80px;text-align:right"></div>
+      <div class="setting-row"><span class="setting-label">Threshold (dB)</span><input id="set-threshold" type="number" class="setting-input"></div>
+      <div class="setting-row"><span class="setting-label">Warning delay (s)</span><input id="set-warn-delay" type="number" class="setting-input"></div>
+      <div class="setting-row"><span class="setting-label">Alert delay (s)</span><input id="set-alert-delay" type="number" class="setting-input"></div>
     </div>
   </div>
 
@@ -191,7 +194,7 @@
     <div class="setting-group-title">Auto-Stop</div>
     <div class="card">
       <div class="setting-row"><span class="setting-label">Enable</span><button id="set-autostop" class="toggle" onclick="sbToggleSetting('set-autostop','silence.auto_stop.enabled')"></button></div>
-      <div class="setting-row"><span class="setting-label">Delay (s)</span><input id="set-autostop-delay" type="number" style="width:80px;text-align:right" step="0.5"></div>
+      <div class="setting-row"><span class="setting-label">Delay (s)</span><input id="set-autostop-delay" type="number" class="setting-input" step="0.5"></div>
       <div class="setting-row"><span class="setting-label">Tone Detection</span><button id="set-tone" class="toggle" onclick="sbToggleSetting('set-tone','silence.auto_stop.tone_detection_enabled')"></button></div>
       <div class="setting-row"><span class="setting-label">Trigger mAirList</span><button id="set-trigger-ml" class="toggle" onclick="sbToggleSetting('set-trigger-ml','silence.auto_stop.trigger_mairlist')"></button></div>
       <div class="setting-row"><span class="setting-label">Stop Stream</span><button id="set-stop-stream" class="toggle" onclick="sbToggleSetting('set-stop-stream','silence.auto_stop.stop_stream')"></button></div>
@@ -207,9 +210,43 @@
       <div class="setting-row"><span class="setting-label">Default Command</span></div>
       <input id="set-ml-cmd" type="text" style="margin-bottom:8px">
       <div class="setting-row"><span class="setting-label">Silence Command</span></div>
-      <input id="set-ml-silence-cmd" type="text" style="margin-bottom:8px">
+      <input id="set-ml-silence-cmd" type="text" placeholder="Optional extra command" style="margin-bottom:8px">
       <div class="setting-row"><span class="setting-label">Tone Command</span></div>
-      <input id="set-ml-tone-cmd" type="text">
+      <input id="set-ml-tone-cmd" type="text" placeholder="Optional extra command">
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <div class="setting-group-title">mAirList Auto-Stop Actions</div>
+    <div class="card">
+      <div class="setting-row"><span class="setting-label">Skip to Next</span><button id="set-ml-action-next" class="toggle on" onclick="sbToggleSetting('set-ml-action-next','mairlist.action_next')"></button></div>
+      <div class="setting-row"><span class="setting-label">Delete Item</span><button id="set-ml-action-delete" class="toggle" onclick="sbToggleSetting('set-ml-action-delete','mairlist.action_delete_item')"></button></div>
+      <div class="setting-row"><span class="setting-label">Change Timing</span><button id="set-ml-action-timing" class="toggle" onclick="sbToggleSetting('set-ml-action-timing','mairlist.action_change_timing')"></button></div>
+      <div class="setting-row"><span class="setting-label">Timing Value</span>
+        <select id="set-ml-timing-value" style="width:auto;max-width:180px">
+          <option>Normal</option><option>Hard fixed time</option><option>Soft fixed time</option>
+          <option>Backtimed</option><option>Fixed</option><option>Excluded from backtiming</option>
+        </select>
+      </div>
+      <div class="setting-row"><span class="setting-label">Target Player</span>
+        <select id="set-ml-action-player" style="width:60px"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+      </div>
+      <div class="setting-row"><span class="setting-label">Target Playlist</span><input id="set-ml-action-playlist" type="number" class="setting-input" value="1" min="1" max="10"></div>
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <div class="setting-group-title">Schedule Auto-Start</div>
+    <div class="card">
+      <div class="setting-row"><span class="setting-label">Enable</span><button id="set-schedule-enabled" class="toggle" onclick="sbToggleSetting('set-schedule-enabled','schedule.enabled')"></button></div>
+      <div id="schedule-entries" style="margin-top:8px"></div>
+      <div class="btn-row" style="margin-top:8px;gap:8px">
+        <button class="btn-sm" onclick="sbScheduleAdd()">+ Add Time</button>
+        <button class="btn-sm" onclick="sbScheduleRemove()">- Remove Last</button>
+      </div>
+      <p style="font-size:11px;color:var(--text2);margin-top:8px">
+        Auto-start stream at scheduled times. Silence/tone detection triggers mAirList actions when news ends.
+      </p>
     </div>
   </div>
 
@@ -219,10 +256,10 @@
       <div class="setting-row"><span class="setting-label">Enable</span><button id="set-tunnel-enabled" class="toggle" onclick="sbToggleSetting('set-tunnel-enabled','tunnel.enabled')"></button></div>
       <div class="setting-row"><span class="setting-label">VPS Host</span></div>
       <input id="set-tunnel-host" type="text" placeholder="e.g. 203.0.113.5" style="margin-bottom:8px">
-      <div class="setting-row"><span class="setting-label">SSH Port</span><input id="set-tunnel-port" type="number" style="width:80px;text-align:right" value="22"></div>
+      <div class="setting-row"><span class="setting-label">SSH Port</span><input id="set-tunnel-port" type="number" class="setting-input" value="22"></div>
       <div class="setting-row"><span class="setting-label">Username</span></div>
       <input id="set-tunnel-user" type="text" placeholder="e.g. root" style="margin-bottom:8px">
-      <div class="setting-row"><span class="setting-label">Remote Port</span><input id="set-tunnel-remote-port" type="number" style="width:80px;text-align:right" value="9000"></div>
+      <div class="setting-row"><span class="setting-label">Remote Port</span><input id="set-tunnel-remote-port" type="number" class="setting-input" value="9000"></div>
       <div id="tunnel-status-row" class="setting-row" style="display:none">
         <span class="setting-label">Status</span>
         <span id="set-tunnel-status" style="font-size:12px"></span>

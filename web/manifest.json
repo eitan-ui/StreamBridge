@@ -4,8 +4,8 @@
   "description": "Remote control for StreamBridge audio relay",
   "start_url": "/app",
   "display": "standalone",
-  "background_color": "#1a1a2e",
-  "theme_color": "#1a1a2e",
+  "background_color": "#08080e",
+  "theme_color": "#08080e",
   "orientation": "portrait",
   "icons": [
     {

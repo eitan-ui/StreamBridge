@@ -46,12 +46,6 @@ struct MainTabView: View {
                     Text("Dashboard")
                 }
 
-            MairListView()
-                .tabItem {
-                    Image(systemName: "music.note.list")
-                    Text("mAirList")
-                }
-
             MicStreamView()
                 .tabItem {
                     Image(systemName: "mic.fill")

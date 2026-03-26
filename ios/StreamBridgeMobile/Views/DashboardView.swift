@@ -72,6 +72,8 @@ struct DashboardView: View {
             Text(appState.streamState.uppercased())
                 .font(.headline.bold())
                 .foregroundStyle(statusColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Spacer()
 
@@ -85,6 +87,7 @@ struct DashboardView: View {
                 Text(appState.uptimeFormatted)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .padding()
@@ -137,6 +140,8 @@ struct DashboardView: View {
             Text(tunnelText)
                 .font(.caption)
                 .foregroundStyle(tunnelColor)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer()
             if let url = appState.tunnelPublicURL, !url.isEmpty {
                 Button {

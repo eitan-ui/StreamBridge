@@ -2,6 +2,8 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QPainter, QColor, QRadialGradient
 
+from gui.theme import SUCCESS, WARNING, ERROR
+
 
 class StatusLED(QWidget):
     """A colored LED indicator with glow effect.
@@ -15,13 +17,14 @@ class StatusLED(QWidget):
         error      - red
     """
 
+    # Colors derived from Carbon Glass theme constants
     COLORS = {
-        "idle": QColor(100, 100, 100),
-        "connecting": QColor(241, 196, 15),
-        "connected": QColor(39, 174, 96),
-        "reconnecting": QColor(241, 196, 15),
-        "silence": QColor(230, 126, 34),
-        "error": QColor(231, 76, 60),
+        "idle": QColor(58, 69, 96),              # Neutral gray
+        "connecting": QColor(WARNING),            # From theme.WARNING
+        "connected": QColor(SUCCESS),             # From theme.SUCCESS
+        "reconnecting": QColor(WARNING),          # From theme.WARNING
+        "silence": QColor(251, 146, 60),          # Orange (silence alert)
+        "error": QColor(ERROR),                   # From theme.ERROR
     }
 
     def __init__(self, parent=None) -> None:
@@ -39,7 +42,7 @@ class StatusLED(QWidget):
         self._pulse_timer.setInterval(50)
         self._pulse_timer.timeout.connect(self._on_pulse)
 
-        self.setFixedSize(16, 16)
+        self.setFixedSize(20, 20)
 
     def set_state(self, state: str) -> None:
         """Set the LED state."""
@@ -69,7 +72,7 @@ class StatusLED(QWidget):
         self.update()
 
     def sizeHint(self) -> QSize:
-        return QSize(16, 16)
+        return QSize(20, 20)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -84,20 +87,31 @@ class StatusLED(QWidget):
             alpha_color.setAlphaF(self._pulse_alpha)
             color = alpha_color
 
-        # Draw glow
+        cx, cy = 10, 10  # center
+
+        # Outer glow
         if self._state not in ("idle",):
-            glow = QRadialGradient(8, 8, 10)
+            glow = QRadialGradient(cx, cy, 12)
             glow_color = QColor(color)
-            glow_color.setAlpha(80)
+            glow_color.setAlpha(60)
             glow.setColorAt(0, glow_color)
+            glow.setColorAt(0.6, QColor(color.red(), color.green(), color.blue(), 30))
             glow.setColorAt(1, QColor(0, 0, 0, 0))
             painter.setBrush(glow)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(0, 0, 16, 16)
+            painter.drawEllipse(0, 0, 20, 20)
 
-        # Draw LED circle
+        # LED circle (slightly larger)
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(3, 3, 10, 10)
+        painter.drawEllipse(4, 4, 12, 12)
+
+        # Highlight reflection
+        if self._state not in ("idle",):
+            highlight = QRadialGradient(8, 7, 4)
+            highlight.setColorAt(0, QColor(255, 255, 255, 60))
+            highlight.setColorAt(1, QColor(255, 255, 255, 0))
+            painter.setBrush(highlight)
+            painter.drawEllipse(5, 5, 8, 6)
 
         painter.end()

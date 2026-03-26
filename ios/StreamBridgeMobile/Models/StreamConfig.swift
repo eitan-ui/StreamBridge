@@ -11,13 +11,14 @@ struct StreamConfig: Codable {
     var mairlist: MairListConfig = MairListConfig()
     var api: ApiConfig = ApiConfig()
     var tunnel: TunnelConfig = TunnelConfig()
+    var schedule: ScheduleConfig = ScheduleConfig()
 
     enum CodingKeys: String, CodingKey {
         case port
         case audioInputDevice = "audio_input_device"
         case opusBitrate = "opus_bitrate"
         case ffmpegPath = "ffmpeg_path"
-        case silence, reconnect, alerts, mairlist, api, tunnel
+        case silence, reconnect, alerts, mairlist, api, tunnel, schedule
     }
 }
 
@@ -126,4 +127,15 @@ struct TunnelConfig: Codable {
         case keyPath = "key_path"
         case remotePort = "remote_port"
     }
+}
+
+struct ScheduleEntry: Codable {
+    var time: String = ""
+    var url: String = ""
+    var enabled: Bool = true
+}
+
+struct ScheduleConfig: Codable {
+    var enabled: Bool = false
+    var entries: [ScheduleEntry] = []
 }

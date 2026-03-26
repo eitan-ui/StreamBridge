@@ -26,7 +26,7 @@ struct LogView: View {
             // Log entries
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(filteredEntries) { entry in
                             HStack(alignment: .top, spacing: 6) {
                                 Text(entry.timeString)
@@ -44,7 +44,7 @@ struct LogView: View {
                                     .foregroundStyle(logColor(entry.level))
                             }
                             .padding(.horizontal)
-                            .padding(.vertical, 2)
+                            .padding(.vertical, 4)
                             .id(entry.id)
                         }
                     }

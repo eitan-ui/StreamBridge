@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QTextEdit, QFrame,
     QApplication, QMessageBox,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QFont, QIcon
 
 from models.config import Config
@@ -16,128 +16,14 @@ from core.http_relay import HttpRelay
 from core.health_monitor import HealthMonitor
 from core.alert_system import AlertSystem
 from core.mairlist_api import MairListAPI
+from core.scheduler import StreamScheduler
 from core.api_server import ApiServer, BonjourAdvertiser
 from core.ssh_tunnel import SSHTunnel
 from gui.widgets.status_led import StatusLED
 from gui.widgets.level_meter import StereoLevelMeter
 from utils.audio_levels import AudioLevels, StreamMetadata
-
-
-# Dark theme stylesheet
-DARK_STYLE = """
-QMainWindow {
-    background-color: #1a1a2e;
-}
-QWidget {
-    background-color: #1a1a2e;
-    color: #e0e0e0;
-    font-family: 'Helvetica Neue', 'Segoe UI', sans-serif;
-}
-QLabel {
-    background: transparent;
-}
-QLineEdit {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    padding: 7px 10px;
-    color: #e0e0e0;
-    font-size: 12px;
-}
-QLineEdit:focus {
-    border-color: #3498db;
-}
-QComboBox {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    border-radius: 4px;
-    padding: 7px 10px;
-    color: #e0e0e0;
-    font-size: 12px;
-}
-QComboBox::drop-down {
-    border: none;
-    width: 20px;
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-}
-QComboBox::down-arrow {
-    image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #e0e0e0;
-    width: 0;
-    height: 0;
-    margin-right: 6px;
-}
-QComboBox QAbstractItemView {
-    background-color: #16213e;
-    border: 1px solid #252545;
-    color: #e0e0e0;
-    selection-background-color: #0f3460;
-    selection-color: #ffffff;
-    outline: 0;
-    padding: 2px;
-}
-QPushButton {
-    border: none;
-    border-radius: 5px;
-    padding: 10px;
-    font-weight: bold;
-    font-size: 13px;
-}
-QPushButton#startBtn {
-    background-color: #27ae60;
-    color: white;
-}
-QPushButton#startBtn:hover {
-    background-color: #2ecc71;
-}
-QPushButton#startBtn:disabled {
-    background-color: #1a5c38;
-    color: #666;
-}
-QPushButton#stopBtn {
-    background-color: #444;
-    color: #888;
-}
-QPushButton#stopBtn:enabled {
-    background-color: #c0392b;
-    color: white;
-}
-QPushButton#stopBtn:enabled:hover {
-    background-color: #e74c3c;
-}
-QPushButton#smallBtn {
-    background-color: #0f3460;
-    color: #e0e0e0;
-    padding: 7px 10px;
-    font-size: 11px;
-    font-weight: normal;
-    border-radius: 4px;
-}
-QPushButton#smallBtn:hover {
-    background-color: #1a5276;
-}
-QTextEdit {
-    background-color: #0a0a15;
-    border: none;
-    border-radius: 3px;
-    color: #555;
-    font-family: 'Consolas', 'SF Mono', monospace;
-    font-size: 11px;
-    padding: 8px;
-}
-QFrame#statusPanel {
-    background-color: #16213e;
-    border-radius: 6px;
-}
-QFrame#endpointPanel {
-    background-color: #0d2137;
-    border: 1px dashed #2a3f5f;
-    border-radius: 5px;
-}
-"""
+from gui.theme import BASE_STYLESHEET, FONT_MONO, FONT_FAMILY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, ACCENT, SUCCESS, ERROR, WARNING, TEXT_ON_BUTTON, CARD_BG, CARD_BORDER, MARGIN, SPACING_LG, SPACING_MD, FONT_LG, FONT_MD, FONT_SM, FONT_XS
+from gui.frameless import WindowTitleBar, _paint_rounded_bg
 
 
 class MainWindow(QMainWindow):
@@ -161,6 +47,9 @@ class MainWindow(QMainWindow):
         self._health_monitor = HealthMonitor(
             self._engine, self._alert_system, config
         )
+
+        # Scheduled auto-start
+        self._scheduler = StreamScheduler(config.schedule, source_manager=source_manager)
 
         # API server for mobile companion app
         self._api_server = ApiServer(config, source_manager, config.ffmpeg_path)
@@ -206,22 +95,34 @@ class MainWindow(QMainWindow):
         self._uptime_timer.timeout.connect(self._update_uptime)
 
     def _init_ui(self) -> None:
-        self.setWindowTitle("StreamBridge")
-        self.setFixedWidth(440)
-        self.setMinimumHeight(500)
-        self.setStyleSheet(DARK_STYLE)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setMinimumWidth(352)
+        self.setMinimumHeight(416)
+        self.setStyleSheet(BASE_STYLESHEET)
 
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(MARGIN, 0, MARGIN, MARGIN)
+        layout.setSpacing(0)
+
+        # Custom title bar
+        self._title_bar = WindowTitleBar(self)
+        layout.addWidget(self._title_bar)
+
+        # Content area with its own spacing
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(SPACING_LG)
+        layout.addLayout(content, 1)
+        layout = content
 
         # --- Source section ---
         source_label = QLabel("SOURCE")
         source_label.setStyleSheet(
-            "font-size: 10px; text-transform: uppercase; color: #7f8fa6; "
-            "letter-spacing: 1px;"
+            f"font-size: {FONT_XS}px; font-weight: 600; text-transform: uppercase; color: {TEXT_SECONDARY}; "
+            f"letter-spacing: 2.5px;"
         )
         layout.addWidget(source_label)
 
@@ -229,15 +130,11 @@ class MainWindow(QMainWindow):
         source_row = QHBoxLayout()
         source_row.setSpacing(6)
         self._source_combo = QComboBox()
-        self._source_combo.setMinimumHeight(32)
-        self._source_combo.view().setStyleSheet(
-            "QAbstractItemView { background-color: #16213e; color: #e0e0e0; "
-            "selection-background-color: #0f3460; selection-color: #ffffff; }"
-        )
+        self._source_combo.setMinimumHeight(26)
         source_row.addWidget(self._source_combo, 1)
-        self._manage_btn = QPushButton("⚙")
+        self._manage_btn = QPushButton("···")
         self._manage_btn.setObjectName("smallBtn")
-        self._manage_btn.setFixedSize(36, 32)
+        self._manage_btn.setFixedSize(28, 28)
         self._manage_btn.setToolTip("Manage sources")
         source_row.addWidget(self._manage_btn)
         layout.addLayout(source_row)
@@ -247,11 +144,11 @@ class MainWindow(QMainWindow):
         url_row.setSpacing(6)
         self._url_input = QLineEdit()
         self._url_input.setPlaceholderText("Paste stream URL here...")
-        self._url_input.setMinimumHeight(32)
+        self._url_input.setMinimumHeight(26)
         url_row.addWidget(self._url_input, 1)
-        self._save_btn = QPushButton("💾")
+        self._save_btn = QPushButton("+")
         self._save_btn.setObjectName("smallBtn")
-        self._save_btn.setFixedSize(36, 32)
+        self._save_btn.setFixedSize(28, 28)
         self._save_btn.setToolTip("Save source")
         url_row.addWidget(self._save_btn)
         layout.addLayout(url_row)
@@ -259,29 +156,23 @@ class MainWindow(QMainWindow):
         # --- Audio Input section ---
         input_label = QLabel("AUDIO INPUT")
         input_label.setStyleSheet(
-            "font-size: 10px; text-transform: uppercase; color: #7f8fa6; "
-            "letter-spacing: 1px; margin-top: 4px;"
+            f"font-size: {FONT_XS}px; font-weight: 600; text-transform: uppercase; color: {TEXT_SECONDARY}; "
+            f"letter-spacing: 2.5px;"
         )
         layout.addWidget(input_label)
 
         input_row = QHBoxLayout()
         input_row.setSpacing(6)
         self._device_combo = QComboBox()
-        self._device_combo.setMinimumHeight(32)
+        self._device_combo.setMinimumHeight(26)
         # Force non-native popup on macOS so QAbstractItemView stylesheet is
         # respected.  Without this the native Cocoa popup ignores dark-theme
         # colours and items appear invisible.
-        self._device_combo.setStyleSheet(
-            self._device_combo.styleSheet()  # keep inherited styles
-        )
-        self._device_combo.view().setStyleSheet(
-            "QAbstractItemView { background-color: #16213e; color: #e0e0e0; "
-            "selection-background-color: #0f3460; selection-color: #ffffff; }"
-        )
+        # Combo view styling is handled by BASE_STYLESHEET
         input_row.addWidget(self._device_combo, 1)
-        self._refresh_devices_btn = QPushButton("🔄")
+        self._refresh_devices_btn = QPushButton("↻")
         self._refresh_devices_btn.setObjectName("smallBtn")
-        self._refresh_devices_btn.setFixedSize(36, 32)
+        self._refresh_devices_btn.setFixedSize(28, 28)
         self._refresh_devices_btn.setToolTip("Refresh devices")
         input_row.addWidget(self._refresh_devices_btn)
         layout.addLayout(input_row)
@@ -291,11 +182,11 @@ class MainWindow(QMainWindow):
         btn_row.setSpacing(6)
         self._start_btn = QPushButton("▶  START")
         self._start_btn.setObjectName("startBtn")
-        self._start_btn.setMinimumHeight(40)
+        self._start_btn.setMinimumHeight(32)
         btn_row.addWidget(self._start_btn, 1)
-        self._stop_btn = QPushButton("⏹  STOP")
+        self._stop_btn = QPushButton("■  STOP")
         self._stop_btn.setObjectName("stopBtn")
-        self._stop_btn.setMinimumHeight(40)
+        self._stop_btn.setMinimumHeight(32)
         self._stop_btn.setEnabled(False)
         btn_row.addWidget(self._stop_btn, 1)
         layout.addLayout(btn_row)
@@ -304,19 +195,19 @@ class MainWindow(QMainWindow):
         status_frame = QFrame()
         status_frame.setObjectName("statusPanel")
         status_layout = QVBoxLayout(status_frame)
-        status_layout.setContentsMargins(12, 12, 12, 12)
-        status_layout.setSpacing(8)
+        status_layout.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+        status_layout.setSpacing(14)
 
         # Status row: LED + label + uptime
         status_header = QHBoxLayout()
         self._status_led = StatusLED()
         status_header.addWidget(self._status_led)
         self._status_label = QLabel("IDLE")
-        self._status_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #666;")
+        self._status_label.setStyleSheet(f"font-size: {FONT_MD}px; font-weight: 700; color: {TEXT_MUTED};")
         status_header.addWidget(self._status_label)
         status_header.addStretch()
         self._uptime_label = QLabel("")
-        self._uptime_label.setStyleSheet("font-size: 10px; color: #7f8fa6;")
+        self._uptime_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_SECONDARY}; font-variant-numeric: tabular-nums;")
         status_header.addWidget(self._uptime_label)
         status_layout.addLayout(status_header)
 
@@ -327,14 +218,14 @@ class MainWindow(QMainWindow):
         # Stream info + latency + silence indicator
         info_row = QHBoxLayout()
         self._stream_info_label = QLabel("")
-        self._stream_info_label.setStyleSheet("font-size: 10px; color: #7f8fa6;")
+        self._stream_info_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_SECONDARY};")
         info_row.addWidget(self._stream_info_label)
         info_row.addStretch()
         self._latency_label = QLabel("")
-        self._latency_label.setStyleSheet("font-size: 10px; color: #3498db;")
+        self._latency_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {ACCENT}; font-variant-numeric: tabular-nums;")
         info_row.addWidget(self._latency_label)
         self._silence_label = QLabel("")
-        self._silence_label.setStyleSheet("font-size: 10px;")
+        self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px;")
         info_row.addWidget(self._silence_label)
         status_layout.addLayout(info_row)
 
@@ -344,31 +235,31 @@ class MainWindow(QMainWindow):
         endpoint_frame = QFrame()
         endpoint_frame.setObjectName("endpointPanel")
         endpoint_layout = QVBoxLayout(endpoint_frame)
-        endpoint_layout.setContentsMargins(10, 10, 10, 10)
+        endpoint_layout.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
         endpoint_layout.setSpacing(3)
 
         ep_title = QLabel("MAIRLIST ENDPOINT")
         ep_title.setStyleSheet(
-            "font-size: 9px; text-transform: uppercase; color: #7f8fa6; "
-            "letter-spacing: 1px;"
+            f"font-size: {FONT_XS}px; font-weight: 600; text-transform: uppercase; color: {TEXT_SECONDARY}; "
+            f"letter-spacing: 2.5px;"
         )
         endpoint_layout.addWidget(ep_title)
 
         ep_row = QHBoxLayout()
         self._endpoint_label = QLabel(self._relay.endpoint)
         self._endpoint_label.setStyleSheet(
-            "font-size: 12px; color: #3498db; font-family: 'Consolas', monospace;"
+            f"font-size: {FONT_MD}px; color: {ACCENT}; font-family: {FONT_MONO};"
         )
         ep_row.addWidget(self._endpoint_label, 1)
-        self._copy_btn = QPushButton("📋")
+        self._copy_btn = QPushButton("Copy")
         self._copy_btn.setObjectName("smallBtn")
-        self._copy_btn.setFixedSize(32, 28)
+        self._copy_btn.setFixedSize(56, 30)
         self._copy_btn.setToolTip("Copy endpoint URL")
         ep_row.addWidget(self._copy_btn)
-        self._playlist_btn = QPushButton("🎵")
+        self._playlist_btn = QPushButton("♪")
         self._playlist_btn.setObjectName("smallBtn")
-        self._playlist_btn.setFixedSize(32, 28)
-        self._playlist_btn.setToolTip("mAirList Playlist Control")
+        self._playlist_btn.setFixedSize(28, 28)
+        self._playlist_btn.setToolTip("Stream Control")
         ep_row.addWidget(self._playlist_btn)
         endpoint_layout.addLayout(ep_row)
 
@@ -377,23 +268,23 @@ class MainWindow(QMainWindow):
         # --- Event log ---
         self._log_text = QTextEdit()
         self._log_text.setReadOnly(True)
-        self._log_text.setMaximumHeight(80)
+        self._log_text.setMaximumHeight(60)
         layout.addWidget(self._log_text)
 
         # --- Footer ---
         footer_row = QHBoxLayout()
         port_label = QLabel(f"Port: {self._config.port}")
-        port_label.setStyleSheet("font-size: 10px; color: #555;")
+        port_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_MUTED};")
         footer_row.addWidget(port_label)
         footer_row.addStretch()
-        self._about_btn = QPushButton("ℹ")
+        self._about_btn = QPushButton("?")
         self._about_btn.setObjectName("smallBtn")
-        self._about_btn.setFixedSize(26, 26)
+        self._about_btn.setFixedSize(30, 28)
         self._about_btn.setToolTip("About StreamBridge")
         footer_row.addWidget(self._about_btn)
-        self._settings_btn = QPushButton("⚙ Settings")
+        self._settings_btn = QPushButton("Settings")
         self._settings_btn.setObjectName("smallBtn")
-        self._settings_btn.setFixedHeight(26)
+        self._settings_btn.setFixedHeight(24)
         footer_row.addWidget(self._settings_btn)
         layout.addLayout(footer_row)
 
@@ -434,6 +325,10 @@ class MainWindow(QMainWindow):
 
         # mAirList API signals
         self._mairlist_api.log_message.connect(self._add_log)
+
+        # Scheduler signals
+        self._scheduler.schedule_triggered.connect(self._on_schedule_triggered)
+        self._scheduler.schedule_stop.connect(self._on_schedule_stop)
 
         # API server broadcasting — forward signals to WebSocket clients
         self._engine.state_changed.connect(self._api_on_state_changed)
@@ -488,7 +383,7 @@ class MainWindow(QMainWindow):
 
         devices = StreamEngine.list_audio_devices(self._config.ffmpeg_path)
         for dev_id, dev_name in devices:
-            self._device_combo.addItem(f"🎤 {dev_name}", dev_id)
+            self._device_combo.addItem(dev_name, dev_id)
 
         if hasattr(self, '_log_text'):
             if devices:
@@ -512,6 +407,8 @@ class MainWindow(QMainWindow):
 
         if not url and not device:
             self._add_log("ERROR: No source specified")
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "StreamBridge", "No source specified.\nEnter a URL or select an audio device.")
             return
 
         self._is_streaming = True
@@ -541,6 +438,10 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(self._relay.endpoint)
         self._add_log("Endpoint URL copied to clipboard")
+        # Visual feedback: temporarily change button text
+        original = self._copy_btn.text()
+        self._copy_btn.setText("✓")
+        QTimer.singleShot(1500, lambda: self._copy_btn.setText(original))
 
     def _on_save_source(self) -> None:
         url = self._url_input.text().strip()
@@ -568,11 +469,14 @@ class MainWindow(QMainWindow):
         self._populate_sources()
 
     def _on_playlist_control(self) -> None:
-        from gui.mairlist_playlist_dialog import MairListPlaylistDialog
-        dialog = MairListPlaylistDialog(
-            self._mairlist_api, self._config.mairlist, self
+        from gui.stream_control_dialog import StreamControlDialog
+        dialog = StreamControlDialog(
+            self._config.schedule, self._source_manager, self
         )
-        dialog.exec()
+        if dialog.exec():
+            self._config.schedule = dialog.get_config()
+            self._config.save()
+            self._scheduler.update_config(self._config.schedule)
 
     def _on_settings(self) -> None:
         from gui.settings_dialog import SettingsDialog
@@ -583,6 +487,7 @@ class MainWindow(QMainWindow):
             self._alert_system.update_config(self._config.alerts)
             self._health_monitor.update_config(self._config)
             self._mairlist_api.update_config(self._config.mairlist)
+            self._scheduler.update_config(self._config.schedule)
             self._endpoint_label.setText(
                 f"http://localhost:{self._config.port}/stream"
             )
@@ -597,24 +502,24 @@ class MainWindow(QMainWindow):
 
     def _on_state_changed(self, state: StreamState) -> None:
         state_map = {
-            StreamState.IDLE: ("IDLE", "idle", "#666"),
-            StreamState.CONNECTING: ("CONNECTING...", "connecting", "#f1c40f"),
-            StreamState.CONNECTED: ("CONNECTED", "connected", "#27ae60"),
-            StreamState.RECONNECTING: ("RECONNECTING...", "reconnecting", "#f1c40f"),
-            StreamState.ERROR: ("ERROR", "error", "#e74c3c"),
+            StreamState.IDLE: ("IDLE", "idle", TEXT_MUTED),
+            StreamState.CONNECTING: ("CONNECTING...", "connecting", WARNING),
+            StreamState.CONNECTED: ("CONNECTED", "connected", SUCCESS),
+            StreamState.RECONNECTING: ("RECONNECTING...", "reconnecting", WARNING),
+            StreamState.ERROR: ("ERROR", "error", ERROR),
         }
         label, led_state, color = state_map.get(
-            state, ("UNKNOWN", "idle", "#666")
+            state, ("UNKNOWN", "idle", TEXT_MUTED)
         )
         self._status_label.setText(label)
         self._status_label.setStyleSheet(
-            f"font-size: 12px; font-weight: bold; color: {color};"
+            f"font-size: {FONT_MD}px; font-weight: 700; color: {color};"
         )
         self._status_led.set_state(led_state)
 
         if state == StreamState.CONNECTED:
             self._silence_label.setText("● Audio OK")
-            self._silence_label.setStyleSheet("font-size: 10px; color: #27ae60;")
+            self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
 
     def _on_audio_data(self, data: bytes) -> None:
         import time
@@ -641,15 +546,11 @@ class MainWindow(QMainWindow):
         """Handle auto-stop triggered by silence or tone detection."""
         self._add_log(f"{detection_type.upper()} DETECTED: {reason}")
 
-        # Pick the right mAirList command based on detection type
+        # Execute configured mAirList actions
         if self._config.silence.auto_stop.trigger_mairlist:
-            ml = self._config.mairlist
-            if detection_type == "tone":
-                cmd = ml.tone_command or ml.command or "PLAYER A NEXT"
-            else:
-                cmd = ml.silence_command or ml.command or "PLAYER A NEXT"
-            self._add_log(f"Sending mAirList command: {cmd}")
-            self._mairlist_api.send_command(cmd)
+            actions = self._mairlist_api.execute_auto_stop_actions(detection_type)
+            for desc in actions:
+                self._add_log(f"mAirList: {desc}")
 
         # Only stop the stream if configured to do so
         if self._config.silence.auto_stop.stop_stream:
@@ -669,17 +570,43 @@ class MainWindow(QMainWindow):
 
     def _on_silence_warning(self) -> None:
         self._silence_label.setText("⚠ Silence")
-        self._silence_label.setStyleSheet("font-size: 10px; color: #f1c40f;")
+        self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {WARNING};")
         self._status_led.set_state("silence")
 
     def _on_silence_alert(self) -> None:
         self._silence_label.setText("🔴 SILENCE ALERT")
-        self._silence_label.setStyleSheet("font-size: 10px; color: #e74c3c; font-weight: bold;")
+        self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {ERROR}; font-weight: 700;")
 
     def _on_silence_cleared(self) -> None:
         self._silence_label.setText("● Audio OK")
-        self._silence_label.setStyleSheet("font-size: 10px; color: #27ae60;")
+        self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
         self._status_led.set_state("connected")
+
+    def _on_schedule_triggered(self, url: str) -> None:
+        """Handle scheduled stream auto-start/switch."""
+        from datetime import datetime
+        time_str = datetime.now().strftime("%H:%M")
+        self._add_log(f"Schedule triggered at {time_str}: {url}")
+
+        current_url = self._url_input.text().strip()
+        if self._is_streaming and current_url == url:
+            return  # Already playing this stream
+
+        self._url_input.setText(url)
+        if self._is_streaming:
+            self._add_log("Switching to scheduled stream...")
+            self._on_stop()
+        self._on_start()
+
+    def _on_schedule_stop(self) -> None:
+        """Handle scheduled stream stop time."""
+        if not self._is_streaming:
+            return
+        if self._config.schedule.keep_playing_on_gap:
+            self._add_log("Scheduled slot ended, keeping current stream")
+        else:
+            self._add_log("Scheduled slot ended, stopping stream")
+            self._on_stop()
 
     # --- API server callbacks (called from REST endpoints) ---
 
@@ -699,6 +626,7 @@ class MainWindow(QMainWindow):
         self._alert_system.update_config(config.alerts)
         self._health_monitor.update_config(config)
         self._mairlist_api.update_config(config.mairlist)
+        self._scheduler.update_config(config.schedule)
         self._api_server.update_config(config)
         self._endpoint_label.setText(
             f"http://localhost:{config.port}/stream"
@@ -773,18 +701,26 @@ class MainWindow(QMainWindow):
     def _add_log(self, message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         if "ERROR" in message:
-            color = "#e74c3c"
+            color = ERROR
         elif "WARNING" in message or "Silence" in message:
-            color = "#f1c40f"
+            color = WARNING
         elif "Connected" in message or "resumed" in message:
-            color = "#27ae60"
+            color = SUCCESS
         else:
-            color = "#666"
+            color = TEXT_SECONDARY
         self._log_text.append(
             f'<span style="color:{color}">[{timestamp}] {message}</span>'
         )
         scrollbar = self._log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def setWindowTitle(self, title: str) -> None:
+        super().setWindowTitle(title)
+        if hasattr(self, '_title_bar'):
+            self._title_bar.set_title(title)
+
+    def paintEvent(self, event) -> None:
+        _paint_rounded_bg(self)
 
     def closeEvent(self, event) -> None:
         """Clean shutdown."""

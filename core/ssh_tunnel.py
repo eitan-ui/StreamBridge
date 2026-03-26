@@ -94,15 +94,38 @@ class SSHTunnel:
 
         self._set_status("disconnected")
 
+    def _get_known_hosts_path(self) -> str:
+        """Resolve the known_hosts file path."""
+        if self._config.known_hosts_path:
+            return os.path.expanduser(self._config.known_hosts_path)
+        # Default: StreamBridge's own known_hosts file
+        ssh_dir = os.path.join(APP_DATA_DIR, "ssh")
+        os.makedirs(ssh_dir, exist_ok=True)
+        return os.path.join(ssh_dir, "known_hosts")
+
     async def _connect(self) -> None:
         """Establish SSH connection and set up reverse port forwarding."""
+        known_hosts_path = self._get_known_hosts_path()
+
+        if self._config.accept_new_keys:
+            # TOFU: accept unknown keys and save them
+            known_hosts = asyncssh.read_known_hosts(known_hosts_path) if os.path.exists(known_hosts_path) else None
+        else:
+            # Strict: require the host key to already be in known_hosts
+            if not os.path.exists(known_hosts_path):
+                raise ConnectionError(
+                    f"Known hosts file not found: {known_hosts_path}. "
+                    f"Enable 'Accept new keys' or add the host key manually."
+                )
+            known_hosts = known_hosts_path
+
         kwargs = {
             "host": self._config.host,
             "port": self._config.port,
             "username": self._config.username,
             "keepalive_interval": 30,
             "keepalive_count_max": 3,
-            "known_hosts": None,  # Accept any host key
+            "known_hosts": known_hosts,
         }
 
         key_path = self._config.key_path
@@ -115,6 +138,25 @@ class SSHTunnel:
                 kwargs["client_keys"] = [default_key]
 
         self._conn = await asyncssh.connect(**kwargs)
+
+        # TOFU: save the host key if accept_new_keys is enabled
+        if self._config.accept_new_keys and self._conn:
+            try:
+                host_key = self._conn.get_server_host_key()
+                if host_key:
+                    key_line = f"{self._config.host} {host_key.export_public_key('openssh').decode().strip()}\n"
+                    # Only append if not already present
+                    existing = ""
+                    if os.path.exists(known_hosts_path):
+                        with open(known_hosts_path, "r") as f:
+                            existing = f.read()
+                    if self._config.host not in existing:
+                        os.makedirs(os.path.dirname(known_hosts_path), exist_ok=True)
+                        with open(known_hosts_path, "a") as f:
+                            f.write(key_line)
+                        logger.info("Saved host key for %s (TOFU)", self._config.host)
+            except (OSError, asyncssh.Error) as e:
+                logger.warning("Could not save host key: %s", e)
         self._listener = await self._conn.forward_remote_port(
             "", self._config.remote_port,
             "localhost", self._local_port,
