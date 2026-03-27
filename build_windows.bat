@@ -1,12 +1,11 @@
 @echo off
 REM ============================================================
-REM  StreamBridge — Windows Build Script
-REM  Creates: StreamBridge.exe inside StreamBridge-Windows.zip
+REM  StreamBridge — Windows Quick Build (portable ZIP)
+REM  For full installer: use build_windows_installer.bat
 REM ============================================================
 
 set APP_NAME=StreamBridge
 set VERSION=1.0.0
-set ZIP_NAME=%APP_NAME%-%VERSION%-Windows
 
 echo.
 echo ========================================
@@ -24,7 +23,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM PyInstaller
 python -c "import PyInstaller" 2>nul
 if errorlevel 1 (
     echo   Installing PyInstaller...
@@ -32,20 +30,9 @@ if errorlevel 1 (
 )
 echo   PyInstaller: OK
 
-REM Dependencies
 echo   Installing dependencies...
 python -m pip install -r requirements.txt --quiet
 echo   Dependencies: OK
-
-REM FFmpeg check
-where ffmpeg >nul 2>&1
-if errorlevel 1 (
-    echo   WARNING: FFmpeg not found in PATH.
-    echo            Download from https://ffmpeg.org/download.html
-    echo            and add to PATH, or configure in Settings.
-) else (
-    echo   FFmpeg: Found
-)
 
 REM --- Clean previous builds ---
 echo.
@@ -54,9 +41,31 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 echo   Clean: OK
 
+REM --- Download FFmpeg ---
+echo.
+echo [3/5] Downloading FFmpeg...
+
+mkdir dist\ffmpeg 2>nul
+curl -L -o "dist\ffmpeg-win64.zip" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" 2>nul
+if errorlevel 1 (
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile 'dist\ffmpeg-win64.zip'"
+)
+
+if exist "dist\ffmpeg-win64.zip" (
+    powershell -Command "Expand-Archive -Path 'dist\ffmpeg-win64.zip' -DestinationPath 'dist\ffmpeg_temp' -Force"
+    for /r "dist\ffmpeg_temp" %%f in (ffmpeg.exe) do copy "%%f" "dist\ffmpeg\ffmpeg.exe" >nul 2>&1
+    for /r "dist\ffmpeg_temp" %%f in (ffprobe.exe) do copy "%%f" "dist\ffmpeg\ffprobe.exe" >nul 2>&1
+    rmdir /s /q "dist\ffmpeg_temp" 2>nul
+    del "dist\ffmpeg-win64.zip" 2>nul
+    echo   FFmpeg: Downloaded OK
+) else (
+    echo   WARNING: Could not download FFmpeg.
+    echo            Users will need to install it manually.
+)
+
 REM --- Build with PyInstaller ---
 echo.
-echo [3/5] Building %APP_NAME%.exe...
+echo [4/5] Building %APP_NAME%.exe...
 python -m PyInstaller streambridge_win.spec --clean --noconfirm
 
 if not exist "dist\%APP_NAME%.exe" (
@@ -66,58 +75,43 @@ if not exist "dist\%APP_NAME%.exe" (
 )
 echo   Built: dist\%APP_NAME%.exe
 
-REM --- Create distribution folder ---
+REM --- Create distribution ZIP ---
 echo.
-echo [4/5] Preparing distribution...
+echo [5/5] Creating distribution...
 
-set DIST_DIR=dist\%ZIP_NAME%
+set DIST_DIR=dist\%APP_NAME%-%VERSION%-Portable
 mkdir "%DIST_DIR%" 2>nul
 copy "dist\%APP_NAME%.exe" "%DIST_DIR%\" >nul
+if exist "dist\ffmpeg\ffmpeg.exe" copy "dist\ffmpeg\ffmpeg.exe" "%DIST_DIR%\" >nul
+if exist "dist\ffmpeg\ffprobe.exe" copy "dist\ffmpeg\ffprobe.exe" "%DIST_DIR%\" >nul
 
-REM Create a README for the distribution
 (
 echo StreamBridge v%VERSION%
 echo =====================
 echo.
-echo INSTALLATION:
-echo   1. Copy StreamBridge.exe to any folder
-echo   2. Install FFmpeg: https://ffmpeg.org/download.html
-echo      - Download, extract, and add the bin folder to PATH
-echo      - Or put ffmpeg.exe next to StreamBridge.exe
-echo   3. Run StreamBridge.exe
+echo Just run StreamBridge.exe - FFmpeg is included!
 echo.
-echo USAGE:
-echo   - Paste a stream URL or select an audio input device
-echo   - Click START
-echo   - Use http://localhost:9000/stream in mAirList
+echo Default endpoint: http://localhost:9898/stream
+echo Configure in Settings for your setup.
 echo.
-echo REQUIREMENTS:
-echo   - Windows 10 or later
-echo   - FFmpeg installed and accessible
+echo For the full installer with Start Menu shortcuts,
+echo use build_windows_installer.bat instead.
 ) > "%DIST_DIR%\README.txt"
 
-REM --- Create ZIP ---
+powershell -Command "Compress-Archive -Path 'dist\%APP_NAME%-%VERSION%-Portable\*' -DestinationPath 'dist\%APP_NAME%-%VERSION%-Portable.zip' -Force"
+
 echo.
-echo [5/5] Creating ZIP archive...
-
-REM Use PowerShell to create ZIP
-powershell -Command "Compress-Archive -Path 'dist\%ZIP_NAME%\*' -DestinationPath 'dist\%ZIP_NAME%.zip' -Force"
-
-if exist "dist\%ZIP_NAME%.zip" (
-    echo.
-    echo ========================================
-    echo   BUILD COMPLETE
-    echo ========================================
-    echo.
-    echo   Exe:  dist\%APP_NAME%.exe
-    echo   Zip:  dist\%ZIP_NAME%.zip
-    echo.
-    echo   Distribute the ZIP file.
-    echo   Users need FFmpeg installed separately.
-    echo.
-) else (
-    echo   WARNING: ZIP creation failed, but .exe is ready
-    echo   Output: dist\%APP_NAME%.exe
-)
+echo ========================================
+echo   BUILD COMPLETE
+echo ========================================
+echo.
+echo   Exe:      dist\%APP_NAME%.exe
+echo   Package:  dist\%APP_NAME%-%VERSION%-Portable.zip
+echo.
+echo   FFmpeg bundled - no separate install needed!
+echo.
+echo   TIP: For a proper installer (.exe with shortcuts),
+echo        run build_windows_installer.bat instead.
+echo.
 
 pause

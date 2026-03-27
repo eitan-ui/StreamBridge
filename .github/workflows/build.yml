@@ -38,18 +38,57 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: |
           pip install pyinstaller
           pip install -r requirements.txt
+
       - name: Build .exe
         run: python -m PyInstaller streambridge_win.spec --clean --noconfirm
-      - name: Package ZIP
-        run: Compress-Archive -Path "dist\StreamBridge.exe" -DestinationPath "dist\StreamBridge-Windows.zip"
+
+      - name: Download FFmpeg
+        run: |
+          mkdir dist\ffmpeg
+          curl -L -o dist\ffmpeg-win64.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+          Expand-Archive -Path dist\ffmpeg-win64.zip -DestinationPath dist\ffmpeg_temp -Force
+          Get-ChildItem -Path dist\ffmpeg_temp -Recurse -Filter "ffmpeg.exe" | Copy-Item -Destination dist\ffmpeg\ffmpeg.exe
+          Get-ChildItem -Path dist\ffmpeg_temp -Recurse -Filter "ffprobe.exe" | Copy-Item -Destination dist\ffmpeg\ffprobe.exe
+          Remove-Item -Recurse -Force dist\ffmpeg_temp
+          Remove-Item dist\ffmpeg-win64.zip
+        shell: pwsh
+
+      - name: Create portable ZIP
+        run: |
+          $dir = "dist\StreamBridge-Portable"
+          New-Item -ItemType Directory -Path $dir -Force
+          Copy-Item "dist\StreamBridge.exe" "$dir\"
+          Copy-Item "dist\ffmpeg\ffmpeg.exe" "$dir\"
+          Copy-Item "dist\ffmpeg\ffprobe.exe" "$dir\" -ErrorAction SilentlyContinue
+          @"
+          StreamBridge v1.0.0 - Portable Edition
+          ========================================
+          Just run StreamBridge.exe - FFmpeg is included!
+          Default endpoint: http://localhost:9898/stream
+          "@ | Set-Content "$dir\README.txt"
+          Compress-Archive -Path "$dir\*" -DestinationPath "dist\StreamBridge-Portable.zip" -Force
+        shell: pwsh
+
+      - name: Build Inno Setup installer
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\streambridge.iss"
+        shell: pwsh
+
       - uses: actions/upload-artifact@v4
         with:
-          name: StreamBridge-Windows
-          path: dist/StreamBridge-Windows.zip
+          name: StreamBridge-Windows-Portable
+          path: dist/StreamBridge-Portable.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StreamBridge-Windows-Installer
+          path: dist/StreamBridge-*-Setup.exe
 
   release:
     needs: [build-macos, build-windows]
@@ -64,4 +103,5 @@ jobs:
         with:
           files: |
             StreamBridge-Mac/StreamBridge-Mac.dmg
-            StreamBridge-Windows/StreamBridge-Windows.zip
+            StreamBridge-Windows-Portable/StreamBridge-Portable.zip
+            StreamBridge-Windows-Installer/StreamBridge-*-Setup.exe
