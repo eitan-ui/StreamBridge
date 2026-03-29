@@ -74,9 +74,11 @@ class MicReceiver:
             "pipe:1",
         ]
         try:
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             self._decoder = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, bufsize=0,
+                creationflags=creation_flags,
             )
             # Reader thread: decoder stdout → pcm_callback
             self._reader_thread = threading.Thread(

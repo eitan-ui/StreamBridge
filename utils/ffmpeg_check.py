@@ -12,8 +12,9 @@ def find_ffmpeg(configured_path: str = "ffmpeg") -> str | None:
     """Find FFmpeg binary. Returns path or None."""
     # Check configured path
     if configured_path and configured_path != "ffmpeg":
-        if os.path.isfile(configured_path) and os.access(configured_path, os.X_OK):
-            return configured_path
+        if os.path.isfile(configured_path):
+            if sys.platform == "win32" or os.access(configured_path, os.X_OK):
+                return configured_path
 
     # Check PATH
     found = shutil.which("ffmpeg")
@@ -41,7 +42,8 @@ def get_ffmpeg_version(path: str) -> str:
     """Get FFmpeg version string."""
     try:
         result = subprocess.run(
-            [path, "-version"], capture_output=True, text=True, timeout=5
+            [path, "-version"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=5
         )
         first_line = result.stdout.strip().split("\n")[0]
         return first_line

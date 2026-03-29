@@ -196,9 +196,13 @@ class SSHTunnel:
 
         # Make private key readable only by owner
         try:
-            os.chmod(private_path, 0o600)
+            if sys.platform == "win32":
+                import stat
+                os.chmod(private_path, stat.S_IREAD | stat.S_IWRITE)
+            else:
+                os.chmod(private_path, 0o600)
         except OSError:
-            pass  # Windows doesn't support chmod the same way
+            pass
 
         public_text = key.export_public_key("openssh").decode("utf-8").strip()
         return private_path, public_text

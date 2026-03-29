@@ -93,6 +93,7 @@ class AudioEncoder:
             "-f", "ogg",
             "pipe:1",
         ]
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         with self._lock:
             self._process = subprocess.Popen(
                 cmd,
@@ -100,6 +101,7 @@ class AudioEncoder:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
+                creationflags=creation_flags,
             )
 
     def write_pcm(self, data: bytes) -> bool:
