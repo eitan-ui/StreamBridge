@@ -2,7 +2,8 @@ import sys
 import os
 import asyncio
 import tempfile
-import fcntl
+if sys.platform != "win32":
+    import fcntl
 
 # Ensure the streambridge package directory is in the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,7 +31,11 @@ def _acquire_lock() -> bool:
     lock_path = os.path.join(tempfile.gettempdir(), "streambridge.lock")
     try:
         LOCK_FILE = open(lock_path, "w")
-        fcntl.flock(LOCK_FILE, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(LOCK_FILE.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(LOCK_FILE, fcntl.LOCK_EX | fcntl.LOCK_NB)
         LOCK_FILE.write(str(os.getpid()))
         LOCK_FILE.flush()
         return True
@@ -46,7 +51,12 @@ def _release_lock() -> None:
     global LOCK_FILE
     if LOCK_FILE:
         try:
-            fcntl.flock(LOCK_FILE, fcntl.LOCK_UN)
+            if sys.platform == "win32":
+                import msvcrt
+                LOCK_FILE.seek(0)
+                msvcrt.locking(LOCK_FILE.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(LOCK_FILE, fcntl.LOCK_UN)
             LOCK_FILE.close()
         except OSError:
             pass

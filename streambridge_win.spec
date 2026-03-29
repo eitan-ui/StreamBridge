@@ -47,6 +47,7 @@ a = Analysis(
         'PyQt6.QtDesigner',
         'PyQt6.QtQml',
         'PyQt6.Qt3D',
+        'fcntl',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
