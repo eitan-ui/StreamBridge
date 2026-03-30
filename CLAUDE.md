@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is StreamBridge
 
-StreamBridge is a PyQt6 desktop app that captures external audio streams (URL or local device) via FFmpeg and re-encodes them as Opus/OGG, serving them over a local HTTP endpoint for mAirList (radio automation software) to consume. It includes silence/tone detection, auto-reconnect, mAirList remote control, a mobile companion PWA, and an iOS app.
+StreamBridge is a PyQt6 desktop app that captures external audio streams (URL or local device) via FFmpeg and serves them as uncompressed PCM/WAV over a local HTTP endpoint for mAirList (radio automation software) to consume. It includes silence/tone detection, auto-reconnect, mAirList remote control, a mobile companion PWA, and an iOS app.
 
 ## Running
 
@@ -37,21 +37,24 @@ Uses PyInstaller (specs: `streambridge.spec`, `streambridge_win.spec`).
 ### Audio Pipeline
 
 ```
-StreamEngine (FFmpeg subprocess) → PCM s16le 44100Hz stereo
-    ↓ audio_data signal (1024-byte chunks)
+StreamEngine (FFmpeg subprocess) → PCM s16le 48000Hz stereo
+    ↓ _pcm_sink direct callback (1024-byte chunks)
 HttpRelay.feed_audio() → RingBuffer (0.2s)
-    ↓ encoder write thread (10ms loop)
-AudioEncoder (FFmpeg Opus, 10ms frames, lowdelay) → OGG/Opus
-    ↓ encoder read thread (20ms sleep)
-asyncio Queue (max 30) → HTTP /stream endpoint
+    ↓ distributor thread (512-byte chunks)
+Per-client asyncio Queues → HTTP /stream endpoint (audio/wav)
+    WAV header (44 bytes) on connect, then raw PCM
 ```
 
-Key latency parameters are in `core/http_relay.py`: buffer size, reader sleep, queue timeout, chunk size.
+Two-port architecture:
+- Port 9000 (config.port): API server, WebSocket, PWA
+- Port 8765 (config.pcm_server_port): PCM WAV stream /stream
+
+Key latency parameters are in `core/http_relay.py`: PCM_CHUNK_SIZE (512 bytes ~2.7ms), buffer size, queue maxsize.
 
 ### Core Modules (`core/`)
 
 - **stream_engine.py** — FFmpeg subprocess manager. Captures from URL or audio device, outputs PCM, parses audio levels from stderr via `astats` filter.
-- **http_relay.py** — HTTP server (aiohttp) with `AudioEncoder` class. Encodes PCM→Opus/OGG, serves `/stream` and `/status`. Feeds silence frames when no audio to keep stream alive.
+- **http_relay.py** — HTTP server (aiohttp). Serves raw PCM as WAV stream at `/stream` on pcm_server_port (8765). API routes on main port (9000). Per-client queues for multi-client support. Feeds silence frames when no audio to keep stream alive.
 - **health_monitor.py** — Silence detection (threshold + timers), tone detection (crest factor analysis), auto-reconnect with exponential backoff, auto-stop triggers.
 - **api_server.py** — REST API + WebSocket server for mobile PWA/iOS app. Endpoints under `/api/v1/`. Includes mic receiver (decodes Opus from mobile), Bonjour advertising.
 - **scheduler.py** — Scheduled auto-start for streams.
@@ -70,7 +73,7 @@ Key latency parameters are in `core/http_relay.py`: buffer size, reader sleep, q
 
 ### Config (`models/config.py`)
 
-Nested dataclasses serialized to `~/Library/Application Support/StreamBridge/config.json`. Key field: `opus_bitrate` (formerly `mp3_bitrate` — old JSON key still loaded for backward compat).
+Nested dataclasses serialized to `~/Library/Application Support/StreamBridge/config.json`. Key field: `pcm_server_port` (default 8765).
 
 ### Web PWA (`web/`)
 
@@ -86,8 +89,8 @@ SwiftUI companion app. Views in `Views/`, models in `Models/`. Communicates with
 - Dark theme throughout — use theme constants from `gui/theme.py` for main window, not hardcoded colors.
 - Settings dialog and other dialogs still use inline QSS strings (`SETTINGS_STYLE`, `DIALOG_STYLE`, `PLAYLIST_STYLE`).
 - Border color for dialogs: `#252545` (subtle). Focus highlight: `#3498db`.
-- Opus codec throughout (not MP3). Config field is `opus_bitrate`.
-- Config JSON loading has backward compat for old field names — maintain this pattern.
-- API server accepts both old and new config keys from mobile clients.
+- PCM Direct streaming (no transcoding). Audio served as WAV on pcm_server_port (8765).
+- Two-port architecture: API on port 9000, PCM stream on port 8765.
+- Config JSON loading ignores old field names (opus_bitrate, mp3_bitrate) gracefully.
 - Single-instance lock at `/tmp/streambridge.lock` — delete if app won't start.
 - The app uses `qasync` (QEventLoop) to bridge Qt and asyncio.

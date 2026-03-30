@@ -1,6 +1,7 @@
 import asyncio
-import subprocess
 import collections
+import struct
+import sys
 import threading
 import time
 from typing import Set
@@ -9,14 +10,34 @@ from aiohttp import web
 from PyQt6.QtCore import QObject, pyqtSignal
 
 
-# 10ms of silence at 44100Hz, stereo, 16-bit = 1764 bytes
-SILENCE_FRAME = b"\x00" * (44100 * 2 * 2 // 100)  # 10ms
+# PCM format constants
+SAMPLE_RATE = 48000
+CHANNELS = 2
+BYTES_PER_SAMPLE = 2
+BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
+SILENCE_FRAME = b"\x00" * (BYTES_PER_SECOND // 100)  # 10ms = 1920 bytes
+PCM_CHUNK_SIZE = 512  # ~2.7ms of audio per chunk
+
+
+def _make_wav_header(sample_rate=48000, channels=2, bits=16) -> bytes:
+    """Static 44-byte WAV header for streaming (indefinite length)."""
+    byte_rate = sample_rate * channels * bits // 8
+    block_align = channels * bits // 8
+    # Both RIFF chunk size and data size set to max uint32 for indefinite streaming
+    return struct.pack('<4sI4s4sIHHIIHH4sI',
+        b'RIFF', 0xFFFFFFFF, b'WAVE',
+        b'fmt ', 16, 1, channels, sample_rate,
+        byte_rate, block_align, bits,
+        b'data', 0xFFFFFFFF)
+
+
+WAV_HEADER = _make_wav_header()  # 44 bytes, computed once
 
 
 class RingBuffer:
     """Thread-safe ring buffer for audio data."""
 
-    def __init__(self, max_seconds: float = 10.0, sample_rate: int = 44100,
+    def __init__(self, max_seconds: float = 10.0, sample_rate: int = 48000,
                  channels: int = 2, bytes_per_sample: int = 2) -> None:
         self._bytes_per_second = sample_rate * channels * bytes_per_sample
         self._max_bytes = int(max_seconds * self._bytes_per_second)
@@ -41,6 +62,22 @@ class RingBuffer:
             self._total_bytes = 0
             return data
 
+    def read_chunk(self, max_bytes: int) -> bytes:
+        """Read up to max_bytes from the front of the buffer."""
+        with self._lock:
+            if not self._buffer:
+                return b""
+            first = self._buffer[0]
+            if len(first) <= max_bytes:
+                self._buffer.popleft()
+                self._total_bytes -= len(first)
+                return first
+            # Chunk is larger than requested — split it
+            result = first[:max_bytes]
+            self._buffer[0] = first[max_bytes:]
+            self._total_bytes -= max_bytes
+            return result
+
     def clear(self) -> None:
         with self._lock:
             self._buffer.clear()
@@ -52,139 +89,62 @@ class RingBuffer:
             return self._total_bytes
 
 
-class AudioEncoder:
-    """Encodes raw PCM audio to Opus/OGG using FFmpeg.
-
-    Auto-restarts if the encoder subprocess crashes.
-    """
-
-    def __init__(self, ffmpeg_path: str = "ffmpeg", bitrate: int = 96) -> None:
-        self._ffmpeg_path = ffmpeg_path
-        self._bitrate = bitrate
-        self._process: subprocess.Popen | None = None
-        self._lock = threading.Lock()
-
-    @property
-    def alive(self) -> bool:
-        with self._lock:
-            return self._process is not None and self._process.poll() is None
-
-    def start(self) -> None:
-        """Start (or restart) the encoder subprocess."""
-        self.stop()
-        cmd = [
-            self._ffmpeg_path,
-            "-y",
-            "-hide_banner",
-            "-loglevel", "error",
-            "-fflags", "nobuffer",
-            "-flags", "low_delay",
-            "-f", "s16le",
-            "-ar", "44100",
-            "-ac", "2",
-            "-i", "pipe:0",
-            "-codec:a", "libopus",
-            "-b:a", f"{self._bitrate}k",
-            "-application", "lowdelay",
-            "-frame_duration", "10",
-            "-vbr", "off",
-            "-packet_loss", "10",
-            "-flush_packets", "1",
-            "-f", "ogg",
-            "pipe:1",
-        ]
-        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        with self._lock:
-            self._process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                bufsize=0,
-                creationflags=creation_flags,
-            )
-
-    def write_pcm(self, data: bytes) -> bool:
-        """Write PCM data to encoder stdin. Returns False on failure."""
-        with self._lock:
-            if not self._process or self._process.poll() is not None:
-                return False
-            try:
-                self._process.stdin.write(data)
-                self._process.stdin.flush()
-                return True
-            except (BrokenPipeError, OSError):
-                return False
-
-    def read_chunk(self, size: int = 1024) -> bytes:
-        """Read a chunk of encoded audio from stdout."""
-        with self._lock:
-            proc = self._process
-        if not proc or not proc.stdout:
-            return b""
-        try:
-            return proc.stdout.read(size)
-        except (OSError, ValueError):
-            return b""
-
-    def stop(self) -> None:
-        with self._lock:
-            proc = self._process
-            self._process = None
-        if proc:
-            try:
-                proc.stdin.close()
-            except OSError:
-                pass
-            try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except (subprocess.TimeoutExpired, OSError):
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-
-
 class HttpRelay(QObject):
-    """HTTP server that re-emits audio as an Opus/OGG stream.
+    """HTTP server that serves raw PCM audio as a WAV stream.
+
+    Two aiohttp apps on separate ports:
+    - API app (config.port): REST API, WebSocket, PWA, /status
+    - PCM app (pcm_port): WAV audio stream at /stream
 
     RELIABILITY GUARANTEES:
-    - Encoder auto-restarts if it crashes
     - Feeds silence when no audio data is available (keeps stream alive)
     - HTTP clients never disconnected unless they close the connection
+    - Each client gets its own queue (proper multi-client support)
     - Queue overflow drops oldest data instead of blocking
     """
 
     log_message = pyqtSignal(str)
     client_count_changed = pyqtSignal(int)
 
-    def __init__(self, port: int = 9000, ffmpeg_path: str = "ffmpeg",
-                 bitrate: int = 96, allow_remote: bool = False) -> None:
+    def __init__(self, port: int = 9000, pcm_port: int = 8765,
+                 ffmpeg_path: str = "ffmpeg",
+                 allow_remote: bool = False) -> None:
         super().__init__()
         self._port = port
+        self._pcm_port = pcm_port
         self._ffmpeg_path = ffmpeg_path
-        self._bitrate = bitrate
         self._allow_remote = allow_remote
-        self._app: web.Application | None = None
-        self._runner: web.AppRunner | None = None
-        self._site: web.TCPSite | None = None
+
+        # PCM app (serves /stream on pcm_port)
+        self._pcm_app: web.Application | None = None
+        self._pcm_runner: web.AppRunner | None = None
+        self._pcm_site: web.TCPSite | None = None
+
+        # API app (serves REST/WS/PWA on main port)
+        self._api_app: web.Application | None = None
+        self._api_runner: web.AppRunner | None = None
+        self._api_site: web.TCPSite | None = None
+
         self._pcm_buffer = RingBuffer(max_seconds=0.2)
-        self._audio_chunks: asyncio.Queue = asyncio.Queue(maxsize=30)
+        self._client_queues: dict[web.StreamResponse, asyncio.Queue] = {}
+        self._client_queues_lock = threading.Lock()
         self._clients: Set[web.StreamResponse] = set()
-        self._clients_lock = threading.Lock()  # Protects _clients from cross-thread access
-        self._encoder: AudioEncoder | None = None
+        self._clients_lock = threading.Lock()
         self._running = False
-        self._encoder_restarts = 0
         self._api_server = None  # Set by main_window after construction
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def port(self) -> int:
         return self._port
 
     @property
+    def pcm_port(self) -> int:
+        return self._pcm_port
+
+    @property
     def endpoint(self) -> str:
-        return f"http://localhost:{self._port}/stream"
+        return f"http://localhost:{self._pcm_port}/stream"
 
     @property
     def client_count(self) -> int:
@@ -197,55 +157,69 @@ class HttpRelay(QObject):
 
     @property
     def app(self) -> web.Application | None:
-        return self._app
+        """The API app (for route registration by api_server)."""
+        return self._api_app
 
     async def start(self) -> None:
-        """Start the HTTP relay server."""
+        """Start both HTTP servers (API + PCM stream)."""
         self._running = True
-        self._encoder_restarts = 0
-        self._app = web.Application()
-        self._app.router.add_get("/stream", self._handle_stream)
-        self._app.router.add_get("/status", self._handle_status)
-
-        # Register API server routes if available
-        if self._api_server:
-            self._api_server.register_routes(self._app)
-
-        self._runner = web.AppRunner(self._app)
-        await self._runner.setup()
+        self._loop = asyncio.get_event_loop()
         bind_host = "0.0.0.0" if self._allow_remote else "127.0.0.1"
-        self._site = web.TCPSite(self._runner, bind_host, self._port)
+
+        # --- API app (main port) ---
+        self._api_app = web.Application()
+        self._api_app.router.add_get("/status", self._handle_status)
+
+        if self._api_server:
+            self._api_server.register_routes(self._api_app)
+
+        self._api_runner = web.AppRunner(self._api_app)
+        await self._api_runner.setup()
+        self._api_site = web.TCPSite(self._api_runner, bind_host, self._port)
 
         try:
-            await self._site.start()
+            await self._api_site.start()
             scope = "all interfaces" if self._allow_remote else "localhost only"
             self.log_message.emit(
-                f"Server active on port {self._port} ({scope})"
+                f"API server active on port {self._port} ({scope})"
             )
         except OSError:
             self.log_message.emit(f"ERROR: Port {self._port} already in use")
             raise
 
-        # Start encoder
-        self._encoder = AudioEncoder(self._ffmpeg_path, self._bitrate)
-        self._encoder.start()
+        # --- PCM stream app (pcm_port) ---
+        self._pcm_app = web.Application()
+        self._pcm_app.router.add_get("/stream", self._handle_stream)
+        self._pcm_app.router.add_get("/status", self._handle_status)
 
-        # Writer thread: PCM buffer → FFmpeg stdin (feeds silence if empty)
-        self._encoder_writer_thread = threading.Thread(
-            target=self._encoder_write_loop, daemon=True
+        self._pcm_runner = web.AppRunner(self._pcm_app)
+        await self._pcm_runner.setup()
+        self._pcm_site = web.TCPSite(
+            self._pcm_runner, "0.0.0.0", self._pcm_port
         )
-        self._encoder_writer_thread.start()
 
-        # Reader thread: FFmpeg stdout → audio chunks queue
-        self._encoder_reader_thread = threading.Thread(
-            target=self._encoder_read_loop, daemon=True
+        try:
+            await self._pcm_site.start()
+            self.log_message.emit(
+                f"PCM stream active on port {self._pcm_port}"
+            )
+        except OSError:
+            self.log_message.emit(
+                f"ERROR: PCM port {self._pcm_port} already in use"
+            )
+            raise
+
+        # Distributor thread: PCM buffer → client queues
+        self._distributor_thread = threading.Thread(
+            target=self._distribute_loop, daemon=True
         )
-        self._encoder_reader_thread.start()
+        self._distributor_thread.start()
 
     async def stop(self) -> None:
-        """Stop the HTTP relay server."""
+        """Stop both HTTP servers."""
         self._running = False
 
+        # Close all stream clients
         with self._clients_lock:
             clients_snapshot = list(self._clients)
         for client in clients_snapshot:
@@ -255,120 +229,100 @@ class HttpRelay(QObject):
                 pass
         with self._clients_lock:
             self._clients.clear()
+        with self._client_queues_lock:
+            self._client_queues.clear()
 
-        if self._encoder:
-            self._encoder.stop()
-            self._encoder = None
+        # Wait for distributor thread
+        t = getattr(self, '_distributor_thread', None)
+        if t and t.is_alive():
+            t.join(timeout=3)
 
-        for attr in ('_encoder_writer_thread', '_encoder_reader_thread'):
-            t = getattr(self, attr, None)
-            if t and t.is_alive():
-                t.join(timeout=3)
+        # Stop PCM site
+        if self._pcm_site:
+            await self._pcm_site.stop()
+        if self._pcm_runner:
+            await self._pcm_runner.cleanup()
 
-        if self._site:
-            await self._site.stop()
-        if self._runner:
-            await self._runner.cleanup()
+        # Stop API site
+        if self._api_site:
+            await self._api_site.stop()
+        if self._api_runner:
+            await self._api_runner.cleanup()
 
         self._pcm_buffer.clear()
-        self.log_message.emit("Local server stopped")
+        self.log_message.emit("Servers stopped")
 
     # -----------------------------------------------------------------
-    #  Encoder threads — NEVER break, auto-restart, feed silence
+    #  Distributor thread — reads PCM buffer, broadcasts to clients
     # -----------------------------------------------------------------
 
-    def _ensure_encoder(self) -> bool:
-        """Restart encoder if it died. Returns True if encoder is alive."""
-        if self._encoder and self._encoder.alive:
-            return True
-        if not self._running:
-            return False
-        # Encoder crashed — stop old one cleanly, clear stale PCM, restart
-        self._encoder_restarts += 1
-        self.log_message.emit(
-            f"Encoder restarted (#{self._encoder_restarts})"
-        )
-        try:
-            if self._encoder:
-                self._encoder.stop()
-            self._pcm_buffer.clear()
-            self._encoder.start()
-            return self._encoder.alive
-        except (FileNotFoundError, OSError):
-            return False
-
-    def _encoder_write_loop(self) -> None:
-        """Feeds PCM data to encoder. Sends silence when buffer is empty
-        so the OGG stream never has gaps."""
-        silence_counter = 0
+    def _distribute_loop(self) -> None:
+        """Reads PCM from buffer and distributes to all client queues.
+        Sends silence when buffer is empty to keep the stream alive."""
+        last_pcm_time = 0.0
         while self._running:
-            if not self._ensure_encoder():
-                time.sleep(0.5)
-                continue
-
-            pcm = self._pcm_buffer.read_all()
+            pcm = self._pcm_buffer.read_chunk(PCM_CHUNK_SIZE)
             if pcm:
-                silence_counter = 0
-                if not self._encoder.write_pcm(pcm):
-                    # Write failed — encoder probably died, loop will restart
-                    time.sleep(0.01)
-                    continue
+                last_pcm_time = time.monotonic()
+                self._enqueue_to_clients(pcm)
             else:
-                # No audio data — feed silence to keep stream alive
-                silence_counter += 1
-                # Only feed silence when clients are connected
-                with self._clients_lock:
-                    has_clients = bool(self._clients)
-                if has_clients:
-                    if not self._encoder.write_pcm(SILENCE_FRAME):
-                        time.sleep(0.01)
-                        continue
-                time.sleep(0.01)
+                time_since_pcm = time.monotonic() - last_pcm_time
+                if time_since_pcm > 0.05:
+                    with self._client_queues_lock:
+                        has_clients = bool(self._client_queues)
+                    if has_clients:
+                        # Feed silence in PCM_CHUNK_SIZE portions
+                        for i in range(0, len(SILENCE_FRAME), PCM_CHUNK_SIZE):
+                            chunk = SILENCE_FRAME[i:i + PCM_CHUNK_SIZE]
+                            if chunk:
+                                self._enqueue_to_clients(chunk)
+                time.sleep(0.005)
 
-    def _encoder_read_loop(self) -> None:
-        """Reads encoded audio from FFmpeg stdout and puts into queue."""
-        while self._running:
-            if not self._encoder or not self._encoder.alive:
-                time.sleep(0.1)
-                continue
+    def _enqueue_to_clients(self, data: bytes) -> None:
+        """Put a PCM chunk into every client's queue (thread-safe)."""
+        if not self._loop or self._loop.is_closed():
+            return
 
-            data = self._encoder.read_chunk(1024)
-            if not data:
-                # Encoder stopped producing output — wait for restart
-                time.sleep(0.02)
-                continue
+        def _put(d=data):
+            with self._client_queues_lock:
+                for q in self._client_queues.values():
+                    if q.full():
+                        try:
+                            q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                    try:
+                        q.put_nowait(d)
+                    except asyncio.QueueFull:
+                        pass
 
-            # Put in queue, drop oldest if full (never block)
-            try:
-                self._audio_chunks.put_nowait(data)
-            except asyncio.QueueFull:
-                try:
-                    self._audio_chunks.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                try:
-                    self._audio_chunks.put_nowait(data)
-                except asyncio.QueueFull:
-                    pass
+        self._loop.call_soon_threadsafe(_put)
 
     # -----------------------------------------------------------------
     #  HTTP handlers
     # -----------------------------------------------------------------
 
     async def _handle_stream(self, request: web.Request) -> web.StreamResponse:
-        """Handle a client connection to /stream. Never drops."""
+        """Handle a client connection to /stream. Sends WAV header then PCM."""
         response = web.StreamResponse(
             status=200,
             headers={
-                "Content-Type": "audio/ogg",
+                "Content-Type": "audio/wav",
                 "Cache-Control": "no-cache, no-store",
                 "Connection": "keep-alive",
                 "ICY-Name": "StreamBridge",
-                "ICY-Description": "StreamBridge Audio Relay",
+                "ICY-Description": "StreamBridge PCM Audio Relay",
             },
         )
         await response.prepare(request)
 
+        # Send WAV header (44 bytes)
+        await response.write(WAV_HEADER)
+
+        # Create per-client queue
+        client_queue: asyncio.Queue = asyncio.Queue(maxsize=60)
+        with self._client_queues_lock:
+            self._client_queues[response] = client_queue
         with self._clients_lock:
             self._clients.add(response)
             count = len(self._clients)
@@ -379,17 +333,17 @@ class HttpRelay(QObject):
             while self._running:
                 try:
                     chunk = await asyncio.wait_for(
-                        self._audio_chunks.get(), timeout=0.2
+                        client_queue.get(), timeout=0.5
                     )
                     await response.write(chunk)
                 except asyncio.TimeoutError:
-                    # No data for 0.2s — that's fine, encoder feeds silence
-                    # Just keep the connection alive
                     continue
                 except (ConnectionResetError, ConnectionError,
                         ConnectionAbortedError, BrokenPipeError):
                     break
         finally:
+            with self._client_queues_lock:
+                self._client_queues.pop(response, None)
             with self._clients_lock:
                 self._clients.discard(response)
                 count = len(self._clients)
@@ -405,7 +359,7 @@ class HttpRelay(QObject):
             client_count = len(self._clients)
         return web.json_response({
             "status": "running",
+            "format": "pcm_s16le_48000_stereo",
             "clients": client_count,
             "buffer_bytes": self._pcm_buffer.available,
-            "encoder_restarts": self._encoder_restarts,
         })

@@ -172,7 +172,7 @@ class ApiConfig:
 class Config:
     port: int = 9000
     audio_input_device: str = ""
-    opus_bitrate: int = 128
+    pcm_server_port: int = 8765
     ffmpeg_path: str = "ffmpeg"
     silence: SilenceConfig = field(default_factory=SilenceConfig)
     reconnect: ReconnectConfig = field(default_factory=ReconnectConfig)
@@ -187,8 +187,8 @@ class Config:
         """Clamp all config values to valid ranges."""
         if not (1024 <= self.port <= 65535):
             self.port = max(1024, min(65535, self.port))
-        if not (16 <= self.opus_bitrate <= 512):
-            self.opus_bitrate = max(16, min(512, self.opus_bitrate))
+        if not (1024 <= self.pcm_server_port <= 65535):
+            self.pcm_server_port = max(1024, min(65535, self.pcm_server_port))
         self.silence.validate()
         self.reconnect.validate()
         self.tunnel.validate()
@@ -215,7 +215,7 @@ class Config:
             cfg = cls(
                 port=data.get("port", 9000),
                 audio_input_device=data.get("audio_input_device", ""),
-                opus_bitrate=data.get("opus_bitrate", data.get("mp3_bitrate", 128)),
+                pcm_server_port=data.get("pcm_server_port", 8765),
                 ffmpeg_path=data.get("ffmpeg_path", "ffmpeg"),
                 silence=SilenceConfig(
                     **silence_data,

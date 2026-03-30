@@ -38,8 +38,8 @@ class MainWindow(QMainWindow):
         self._engine = StreamEngine(ffmpeg_path=config.ffmpeg_path)
         self._relay = HttpRelay(
             port=config.port,
+            pcm_port=config.pcm_server_port,
             ffmpeg_path=config.ffmpeg_path,
-            bitrate=config.opus_bitrate,
             allow_remote=config.api.allow_remote,
         )
         self._alert_system = AlertSystem(config.alerts)
@@ -301,6 +301,10 @@ class MainWindow(QMainWindow):
         self._refresh_devices_btn.clicked.connect(self._populate_devices)
         self._source_combo.currentIndexChanged.connect(self._on_source_selected)
 
+        # Wire up direct PCM sink — bypasses Qt event queue entirely.
+        # The audio thread calls relay.feed_audio() directly without queuing.
+        self._engine._pcm_sink = self._relay.feed_audio
+
         # Engine signals
         self._engine.state_changed.connect(self._on_state_changed)
         self._engine.audio_levels.connect(self._on_audio_levels)
@@ -489,7 +493,7 @@ class MainWindow(QMainWindow):
             self._mairlist_api.update_config(self._config.mairlist)
             self._scheduler.update_config(self._config.schedule)
             self._endpoint_label.setText(
-                f"http://localhost:{self._config.port}/stream"
+                f"http://localhost:{self._config.pcm_server_port}/stream"
             )
             # Restart tunnel if config changed
             self._tunnel.update_config(self._config.tunnel)
@@ -522,9 +526,10 @@ class MainWindow(QMainWindow):
             self._silence_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
 
     def _on_audio_data(self, data: bytes) -> None:
-        import time
-        self._last_audio_arrival = time.time()
-        self._relay.feed_audio(data)
+        # PCM is already delivered to the relay via engine._pcm_sink (direct,
+        # no Qt queue). This handler only updates the timestamp for UI display.
+        import time as _time
+        self._last_audio_arrival = _time.time()
 
     def _on_audio_levels(self, levels: AudioLevels) -> None:
         self._level_meter.set_levels(levels.left_db, levels.right_db)
@@ -629,7 +634,7 @@ class MainWindow(QMainWindow):
         self._scheduler.update_config(config.schedule)
         self._api_server.update_config(config)
         self._endpoint_label.setText(
-            f"http://localhost:{config.port}/stream"
+            f"http://localhost:{config.pcm_server_port}/stream"
         )
         # Restart tunnel if config changed
         self._tunnel.update_config(config.tunnel)
@@ -684,12 +689,10 @@ class MainWindow(QMainWindow):
         if self._is_streaming and self._last_audio_arrival > 0:
             import time
             buffer_bytes = self._relay._pcm_buffer.available
-            # Latency = buffered audio duration + encoding overhead
-            bytes_per_sec = 44100 * 2 * 2  # 44100Hz, stereo, 16-bit
+            # Latency = buffered audio duration (no encoding overhead with PCM direct)
+            bytes_per_sec = 48000 * 2 * 2  # 48000Hz, stereo, 16-bit
             buffer_ms = int((buffer_bytes / bytes_per_sec) * 1000) if bytes_per_sec else 0
-            # Add ~10ms for Opus frame encoding
-            total_ms = buffer_ms + 10
-            self._latency_label.setText(f"⏱ {total_ms}ms")
+            self._latency_label.setText(f"⏱ {buffer_ms}ms")
         elif not self._is_streaming:
             self._latency_label.setText("")
 

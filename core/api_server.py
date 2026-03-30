@@ -15,9 +15,9 @@ import logging
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
-import weakref
 from dataclasses import asdict
 from pathlib import Path
 from typing import Set
@@ -69,7 +69,7 @@ class MicReceiver:
             "-fflags", "nobuffer",
             "-flags", "low_delay",
             "-f", "ogg", "-i", "pipe:0",
-            "-f", "s16le", "-ar", "44100", "-ac", "2",
+            "-f", "s16le", "-ar", "48000", "-ac", "2",
             "-flush_packets", "1",
             "pipe:1",
         ]
@@ -122,7 +122,7 @@ class MicReceiver:
         """Read decoded PCM from FFmpeg stdout and send to callback."""
         while self._active and self._decoder and self._decoder.poll() is None:
             try:
-                data = self._decoder.stdout.read(1764)  # ~10ms at 44100Hz stereo 16-bit
+                data = self._decoder.stdout.read(1920)  # ~10ms at 48000Hz stereo 16-bit
                 if not data:
                     break
                 if self._pcm_callback:
@@ -436,13 +436,9 @@ class ApiServer:
         cfg = self._config
 
         # Apply top-level scalar fields
-        for key in ("port", "opus_bitrate", "ffmpeg_path", "audio_input_device"):
+        for key in ("port", "pcm_server_port", "ffmpeg_path", "audio_input_device"):
             if key in updates:
                 setattr(cfg, key, updates[key])
-
-        # Backward compat: accept old key from mobile apps
-        if "mp3_bitrate" in updates and "opus_bitrate" not in updates:
-            cfg.opus_bitrate = updates["mp3_bitrate"]
 
         # Apply nested sections
         if "silence" in updates:

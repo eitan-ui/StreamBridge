@@ -25,7 +25,7 @@ class SettingsDialog(FramelessDialog):
         self._config = Config(
             port=config.port,
             audio_input_device=config.audio_input_device,
-            opus_bitrate=config.opus_bitrate,
+            pcm_server_port=config.pcm_server_port,
             ffmpeg_path=config.ffmpeg_path,
             silence=SilenceConfig(
                 threshold_db=config.silence.threshold_db,
@@ -130,13 +130,20 @@ class SettingsDialog(FramelessDialog):
         form = QFormLayout(tab)
         form.setSpacing(12)
 
-        self._bitrate_combo = QComboBox()
-        for br in [32, 48, 64, 96, 128, 192]:
-            self._bitrate_combo.addItem(f"{br} kbps (Opus)", br)
-        idx = self._bitrate_combo.findData(self._config.opus_bitrate)
-        if idx >= 0:
-            self._bitrate_combo.setCurrentIndex(idx)
-        form.addRow("Opus bitrate:", self._bitrate_combo)
+        self._pcm_port_spin = QSpinBox()
+        self._pcm_port_spin.setRange(1024, 65535)
+        self._pcm_port_spin.setValue(self._config.pcm_server_port)
+        form.addRow("PCM stream port:", self._pcm_port_spin)
+
+        info_label = QLabel(
+            "PCM Direct: audio sin comprimir servido como WAV\n"
+            "por HTTP en localhost. Latencia minima, calidad bit-perfect.\n\n"
+            "Formato: PCM s16le, 48000 Hz, stereo\n"
+            "Ancho de banda: ~192 KB/s por cliente"
+        )
+        info_label.setStyleSheet(f"font-size: {FONT_SM + 1}px; color: {TEXT_SECONDARY}; line-height: 1.5;")
+        info_label.setWordWrap(True)
+        form.addRow(info_label)
 
         return tab
 
@@ -606,7 +613,7 @@ class SettingsDialog(FramelessDialog):
         """Return the modified config."""
         self._config.port = self._port_spin.value()
         self._config.ffmpeg_path = self._ffmpeg_input.text().strip() or "ffmpeg"
-        self._config.opus_bitrate = self._bitrate_combo.currentData()
+        self._config.pcm_server_port = self._pcm_port_spin.value()
 
         self._config.silence.threshold_db = self._threshold_spin.value()
         self._config.silence.warning_delay_s = self._warning_spin.value()

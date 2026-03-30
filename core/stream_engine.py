@@ -58,6 +58,9 @@ class StreamEngine(QObject):
         self._level_left: float | None = None
         self._peak_left: float | None = None
         self._peak_right: float | None = None
+        # Optional direct PCM sink — set by MainWindow to bypass Qt event queue.
+        # Called from the audio thread immediately when PCM is ready.
+        self._pcm_sink = None
 
     @property
     def state(self) -> StreamState:
@@ -116,11 +119,11 @@ class StreamEngine(QObject):
             cmd += input_args
 
         cmd += [
-            "-af", "aformat=channel_layouts=stereo,astats=metadata=1:reset=1,ametadata=mode=print,aresample=44100",
+            "-af", "aformat=channel_layouts=stereo,astats=metadata=1:reset=1,ametadata=mode=print,aresample=48000",
             "-f", "s16le",
             "-acodec", "pcm_s16le",
             "-ac", "2",
-            "-ar", "44100",
+            "-ar", "48000",
             "-flush_packets", "1",
             "-",
         ]
@@ -184,8 +187,123 @@ class StreamEngine(QObject):
         with self._lock:
             return self._running
 
+    def _run_wasapi_loopback(self) -> None:
+        """Capture system audio via PyAudioWPatch WASAPI loopback (blocking mode).
+
+        Uses blocking stream.read() in this Python thread instead of a PortAudio
+        callback, so all PCM processing happens in a normal thread with no
+        real-time constraints or GIL/callback issues.
+        """
+        try:
+            import pyaudiowpatch as pyaudio
+            import audioop
+        except ImportError:
+            self.error.emit("PyAudioWPatch not installed — cannot use WASAPI loopback")
+            self._set_state(StreamState.ERROR)
+            with self._lock:
+                self._running = False
+            return
+
+        import math
+        import struct
+
+        device_index = int(self._device[len("wasapi:"):])
+        FRAMES_PER_BUFFER = 1024  # ~21ms @ 48kHz
+        TARGET_RATE = 48000
+        TARGET_CHANNELS = 2
+
+        p = pyaudio.PyAudio()
+        try:
+            dev_info = p.get_device_info_by_index(device_index)
+            src_channels = max(1, int(dev_info.get("maxInputChannels", 2)))
+            src_rate = int(dev_info.get("defaultSampleRate", 48000))
+
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=src_channels,
+                rate=src_rate,
+                frames_per_buffer=FRAMES_PER_BUFFER,
+                input=True,
+                input_device_index=device_index,
+            )
+
+            def _rms_db(samples):
+                if not samples:
+                    return -100.0
+                rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
+                if rms < 1:
+                    return -100.0
+                return max(-100.0, 20 * math.log10(rms / 32768.0))
+
+            try:
+                stream.start_stream()
+                self._set_state(StreamState.CONNECTED)
+                self.log_message.emit(
+                    f"WASAPI loopback active ({src_rate}Hz, {src_channels}ch → {TARGET_RATE}Hz stereo)"
+                )
+
+                resample_state = None
+                while self._is_running():
+                    try:
+                        in_data = stream.read(FRAMES_PER_BUFFER, exception_on_overflow=False)
+                    except OSError as e:
+                        if self._is_running():
+                            self.log_message.emit(f"WASAPI read error: {e}")
+                        break
+
+                    pcm = in_data
+
+                    # Downmix to stereo if needed
+                    if src_channels == 1:
+                        pcm = audioop.tostereo(pcm, 2, 1, 1)
+                    elif src_channels > 2:
+                        n_frames = len(pcm) // (2 * src_channels)
+                        raw = struct.unpack(f"{n_frames * src_channels}h", pcm)
+                        stereo = []
+                        for i in range(n_frames):
+                            stereo.append(raw[i * src_channels])
+                            stereo.append(raw[i * src_channels + 1])
+                        pcm = struct.pack(f"{n_frames * 2}h", *stereo)
+
+                    # Resample to 44100Hz if device runs at a different rate
+                    if src_rate != TARGET_RATE:
+                        pcm, resample_state = audioop.ratecv(
+                            pcm, 2, TARGET_CHANNELS, src_rate, TARGET_RATE, resample_state
+                        )
+
+                    # Deliver PCM directly to relay — no Qt event queue
+                    if self._pcm_sink:
+                        self._pcm_sink(pcm)
+                    # Signal for UI timestamp update (QueuedConnection, non-blocking)
+                    self.audio_data.emit(pcm)
+
+                    # Audio levels
+                    n = len(pcm) // 2
+                    samples = struct.unpack(f"{n}h", pcm)
+                    left = samples[0::2]
+                    right = samples[1::2]
+                    self.audio_levels.emit(AudioLevels(
+                        left_db=_rms_db(left), right_db=_rms_db(right),
+                        left_peak_db=_rms_db(left), right_peak_db=_rms_db(right),
+                    ))
+            finally:
+                stream.stop_stream()
+                stream.close()
+        except Exception as e:
+            if self._is_running():
+                self.error.emit(f"WASAPI loopback error: {e}")
+                self._set_state(StreamState.ERROR)
+                self.log_message.emit(f"ERROR: {e}")
+        finally:
+            p.terminate()
+            with self._lock:
+                self._running = False
+
     def _run(self) -> None:
-        """Main worker thread: runs FFmpeg and reads output."""
+        """Main worker thread: runs FFmpeg or sounddevice loopback."""
+        if self._device.startswith("wasapi:"):
+            self._run_wasapi_loopback()
+            return
         cmd = self._build_command()
 
         try:
@@ -221,7 +339,7 @@ class StreamEngine(QObject):
         self._stderr_thread.start()
 
         # Read PCM audio data from stdout
-        CHUNK_SIZE = 1024  # ~6ms at 44100Hz stereo 16-bit
+        CHUNK_SIZE = 1024  # ~5ms at 48000Hz stereo 16-bit
         first_chunk = True
 
         while self._is_running() and proc.poll() is None:
@@ -234,6 +352,10 @@ class StreamEngine(QObject):
                     source = self._url or self._device
                     self.log_message.emit(f"Connected to {source}")
                     first_chunk = False
+                # Deliver PCM directly to relay (bypasses Qt event queue)
+                if self._pcm_sink:
+                    self._pcm_sink(data)
+                # Signal for UI/timestamp update (QueuedConnection, non-blocking)
                 self.audio_data.emit(data)
             except (OSError, ValueError):
                 break
@@ -342,23 +464,36 @@ class StreamEngine(QObject):
             return devices
 
         try:
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=10
+                cmd, capture_output=True, timeout=10,
+                creationflags=creation_flags,
             )
-            output = result.stderr
-            import re
+            output = result.stderr.decode("utf-8", errors="replace")
 
             if sys.platform == "win32":
                 in_audio = False
                 for line in output.splitlines():
-                    if "audio devices" in line.lower():
+                    line_lower = line.lower()
+                    # Skip alternative name lines
+                    if "alternative name" in line_lower:
+                        continue
+                    # New FFmpeg format: "Device Name" (audio)
+                    if line_lower.rstrip().endswith("(audio)"):
+                        match = re.search(r'"([^"]+)"', line)
+                        if match:
+                            name = match.group(1)
+                            devices.append((name, name))
+                        continue
+                    # Legacy FFmpeg format: section headers
+                    if "audio devices" in line_lower:
                         in_audio = True
                         continue
-                    if "video devices" in line.lower():
+                    if "video devices" in line_lower:
                         in_audio = False
                         continue
                     if in_audio:
-                        match = re.search(r'"(.+?)"', line)
+                        match = re.search(r'"([^@][^"]*)"', line)
                         if match:
                             name = match.group(1)
                             devices.append((name, name))
@@ -375,7 +510,18 @@ class StreamEngine(QObject):
                             name = match.group(2).strip()
                             devices.append((idx, name))
 
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
             pass
+
+        # WASAPI loopback devices via PyAudioWPatch (Windows only)
+        if sys.platform == "win32":
+            try:
+                import pyaudiowpatch as pyaudio
+                p = pyaudio.PyAudio()
+                for lb in p.get_loopback_device_info_generator():
+                    devices.append((f"wasapi:{lb['index']}", f"{lb['name']} (Loopback)"))
+                p.terminate()
+            except Exception:
+                pass
 
         return devices
