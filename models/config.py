@@ -48,7 +48,7 @@ class AlertConfig:
 class MairListConfig:
     enabled: bool = False
     api_url: str = "http://localhost:9000"
-    command: str = "PLAYER A NEXT"
+    command: str = "AUTOMATION 1 NEXT"
     silence_command: str = ""
     tone_command: str = ""
     # Configurable actions on auto-stop trigger

@@ -1,7 +1,7 @@
-import urllib.request
-import urllib.parse
+import socket
 import threading
-from dataclasses import dataclass, field
+import urllib.parse
+from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -26,15 +26,16 @@ class PlaylistItem:
 
 
 class MairListAPI(QObject):
-    """Sends HTTP commands to mAirList remote control API."""
+    """Sends TCP commands to mAirList remote control server.
+
+    mAirList TCP protocol: connect, send command + \\r\\n, read response line.
+    """
 
     log_message = pyqtSignal(str)
     command_sent = pyqtSignal(str)
     command_failed = pyqtSignal(str)
-    # Emitted when a query returns a response (command, response_text)
     query_response = pyqtSignal(str, str)
-    # Emitted when playlist data is loaded
-    playlist_loaded = pyqtSignal(int, list)  # playlist_num, list[PlaylistItem]
+    playlist_loaded = pyqtSignal(int, list)
 
     def __init__(self, config: MairListConfig) -> None:
         super().__init__()
@@ -42,6 +43,22 @@ class MairListAPI(QObject):
 
     def update_config(self, config: MairListConfig) -> None:
         self._config = config
+
+    def _parse_host_port(self) -> tuple[str, int]:
+        """Extract host and port from api_url config."""
+        url = self._config.api_url.strip().rstrip("/")
+        # Remove protocol prefix if present
+        for prefix in ("http://", "https://", "tcp://"):
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+                break
+        if ":" in url:
+            host, port_str = url.rsplit(":", 1)
+            try:
+                return host, int(port_str)
+            except ValueError:
+                pass
+        return url, 9100
 
     def send_command(self, command: str = "") -> None:
         """Send a command to mAirList. Uses configured command if none given."""
@@ -117,10 +134,10 @@ class MairListAPI(QObject):
             self.delete_item(ml.action_playlist, 0)
             actions_done.append(f"Deleted item from playlist {ml.action_playlist}")
 
-        # 3. Next player
+        # 3. Next — send configured default command (AUTOMATION 1 NEXT)
         if ml.action_next:
-            self.player_command(ml.action_player, "NEXT")
-            actions_done.append(f"Player {ml.action_player} NEXT")
+            self.send_command()
+            actions_done.append(f"Command: {ml.command}")
 
         # 4. Custom command (detection-specific)
         custom_cmd = ""
@@ -134,46 +151,47 @@ class MairListAPI(QObject):
 
         return actions_done
 
-    # --- Internal methods ---
+    # --- Internal TCP methods ---
+
+    def _tcp_send(self, command: str, expect_response: bool = False) -> str:
+        """Send a command via TCP and optionally read the response."""
+        host, port = self._parse_host_port()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            sock.connect((host, port))
+            sock.sendall((command + "\r\n").encode("utf-8"))
+            if not expect_response:
+                return ""
+            # Read response (one line)
+            data = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+                if b"\r\n" in data or b"\n" in data:
+                    break
+            return data.decode("utf-8", errors="replace").strip()
+        finally:
+            sock.close()
 
     def _send(self, command: str) -> None:
-        """Execute the HTTP request to mAirList."""
-        base_url = self._config.api_url.rstrip("/")
-        encoded_cmd = urllib.parse.quote(command)
-        url = f"{base_url}/command?cmd={encoded_cmd}"
-
+        """Execute the TCP command to mAirList."""
         try:
-            req = urllib.request.Request(url, method="GET")
-            req.add_header("User-Agent", "StreamBridge/1.0")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                status = resp.status
-                if 200 <= status < 300:
-                    self.log_message.emit(
-                        f"mAirList command sent: {command}"
-                    )
-                    self.command_sent.emit(command)
-                else:
-                    self.log_message.emit(
-                        f"WARNING: mAirList responded with status {status}"
-                    )
-                    self.command_failed.emit(f"HTTP {status}")
+            response = self._tcp_send(command)
+            self.log_message.emit(f"mAirList command sent: {command}")
+            self.command_sent.emit(command)
         except Exception as e:
-            self.log_message.emit(f"ERROR: mAirList API failed — {e}")
+            self.log_message.emit(f"ERROR: mAirList TCP failed — {e}")
             self.command_failed.emit(str(e))
 
     def _query(self, command: str) -> str:
-        """Execute an HTTP request and return the response body."""
-        base_url = self._config.api_url.rstrip("/")
-        encoded_cmd = urllib.parse.quote(command)
-        url = f"{base_url}/command?cmd={encoded_cmd}"
-
+        """Execute a TCP command and return the response body."""
         try:
-            req = urllib.request.Request(url, method="GET")
-            req.add_header("User-Agent", "StreamBridge/1.0")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                body = resp.read().decode("utf-8", errors="replace").strip()
-                self.query_response.emit(command, body)
-                return body
+            body = self._tcp_send(command, expect_response=True)
+            self.query_response.emit(command, body)
+            return body
         except Exception as e:
             self.log_message.emit(f"ERROR: mAirList query failed — {e}")
             self.command_failed.emit(str(e))
@@ -181,15 +199,8 @@ class MairListAPI(QObject):
 
     def _query_sync(self, command: str) -> str:
         """Synchronous query (for use within background threads)."""
-        base_url = self._config.api_url.rstrip("/")
-        encoded_cmd = urllib.parse.quote(command)
-        url = f"{base_url}/command?cmd={encoded_cmd}"
-
         try:
-            req = urllib.request.Request(url, method="GET")
-            req.add_header("User-Agent", "StreamBridge/1.0")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                return resp.read().decode("utf-8", errors="replace").strip()
+            return self._tcp_send(command, expect_response=True)
         except Exception:
             return ""
 
@@ -221,7 +232,6 @@ class MairListAPI(QObject):
             item.fade_out = self._query_sync(f"{prefix} FADEOUT") or "00:00:00.000"
             item.start_next = self._query_sync(f"{prefix} STARTNEXT") or "00:00:00.000"
 
-            # Fixed times may be empty if not set
             item.hard_fix_time = self._query_sync(f"{prefix} HARDFIX") or ""
             item.soft_fix_time = self._query_sync(f"{prefix} SOFTFIX") or ""
             item.item_type = self._query_sync(f"{prefix} TYPE") or ""
