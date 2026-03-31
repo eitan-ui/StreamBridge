@@ -60,6 +60,20 @@ class MairListAPI(QObject):
                 pass
         return url, 9100
 
+    def test_connection(self) -> bool:
+        """Test if mAirList TCP server is reachable."""
+        if not self._config.enabled:
+            return False
+        host, port = self._parse_host_port()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        try:
+            sock.connect((host, port))
+            sock.close()
+            return True
+        except (OSError, socket.timeout):
+            return False
+
     def send_command(self, command: str = "") -> None:
         """Send a command to mAirList. Uses configured command if none given."""
         if not self._config.enabled:

@@ -68,6 +68,12 @@ class SilenceAutoStopConfig:
     tone_max_crest_db: float = 6.0
     trigger_mairlist: bool = True
     stop_stream: bool = True
+    window_start_min: int = 0   # minute of hour to start allowing NEXT (0 = top of hour)
+    window_end_min: int = 7     # minute of hour to stop allowing NEXT
+    disable_from_day: int = 4   # 0=Mon..6=Sun, 4=Friday
+    disable_from_hour: int = 14
+    disable_to_day: int = 5     # 5=Saturday
+    disable_to_hour: int = 17
 
 
 @dataclass

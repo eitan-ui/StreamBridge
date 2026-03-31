@@ -1,3 +1,5 @@
+import math
+import struct
 import time
 import threading
 
@@ -7,6 +9,24 @@ from core.stream_engine import StreamEngine, StreamState
 from core.alert_system import AlertSystem
 from models.config import Config
 from utils.audio_levels import AudioLevels
+
+
+def _goertzel_magnitude(samples: list[int], target_freq: float,
+                         sample_rate: int) -> float:
+    """Detect magnitude of a specific frequency using Goertzel algorithm."""
+    n = len(samples)
+    if n == 0:
+        return 0.0
+    k = round(n * target_freq / sample_rate)
+    w = 2.0 * math.pi * k / n
+    coeff = 2.0 * math.cos(w)
+    s1 = s2 = 0.0
+    for sample in samples:
+        s0 = sample / 32768.0 + coeff * s1 - s2
+        s2 = s1
+        s1 = s0
+    magnitude = math.sqrt(s1 * s1 + s2 * s2 - coeff * s1 * s2)
+    return magnitude / n
 
 
 class HealthMonitor(QObject):
@@ -42,6 +62,7 @@ class HealthMonitor(QObject):
         self._last_audio_time: float = 0.0
         self._silence_warning_sent = False
         self._silence_alert_sent = False
+        self._has_received_audio = False  # True after first real audio
 
         # Auto-stop tracking (silence + tone detection)
         self._silence_start_time: float = 0.0
@@ -51,6 +72,15 @@ class HealthMonitor(QObject):
         self._auto_stop_fired = False
         self._recent_levels: list[float] = []
         self._recent_peaks: list[float] = []
+
+        # Trigger tone detection
+        self._pcm_buffer: list[int] = []
+        self._pcm_buffer_max = 24000  # 0.5s at 48kHz (mono samples)
+        self._trigger_freq = 16000.0
+        self._trigger_threshold = 0.01  # magnitude threshold
+        self._subsonic_detected_time: float = 0.0
+        self._subsonic_triggered = False
+        self._auto_stop_cooldown: float = 0.0  # timestamp when cooldown ends
 
         # Failover tracking
         self._failover_silence_start: float = 0.0
@@ -72,6 +102,7 @@ class HealthMonitor(QObject):
         self._timer.timeout.connect(self._check_health)
 
         # Connect to engine signals
+        self._engine.audio_data.connect(self._on_pcm_data)
         self._engine.state_changed.connect(self._on_state_changed)
         self._engine.audio_levels.connect(self._on_audio_levels)
 
@@ -106,6 +137,7 @@ class HealthMonitor(QObject):
         self._silence_warning_sent = False
         self._silence_alert_sent = False
         self._auto_stop_fired = False
+        self._has_received_audio = False
         self._is_silent = False
         self._silence_start_time = 0.0
         self._is_tone = False
@@ -114,6 +146,10 @@ class HealthMonitor(QObject):
         self._recent_peaks.clear()
         self._failover_fired = False
         self._failover_silence_start = 0.0
+        self._pcm_buffer.clear()
+        self._subsonic_detected_time = 0.0
+        self._subsonic_triggered = False
+        self._auto_stop_cooldown = 0.0
         self._timer.start()
 
     def stop_monitoring(self) -> None:
@@ -123,6 +159,65 @@ class HealthMonitor(QObject):
         self._start_time = 0.0
         self._silence_warning_sent = False
         self._silence_alert_sent = False
+
+    def _on_pcm_data(self, data: bytes) -> None:
+        """Analyze raw PCM for trigger tone."""
+        if not self._config.silence.auto_stop.enabled:
+            return
+        if self._subsonic_triggered:
+            return
+        # Check time window
+        import datetime as _dt
+        _now = _dt.datetime.now()
+        _minute = _now.minute
+        cfg = self._config.silence.auto_stop
+        if not (cfg.window_start_min <= _minute <= cfg.window_end_min):
+            return
+
+        # Extract left channel samples (every other 16-bit sample)
+        n_samples = len(data) // 4  # stereo 16-bit = 4 bytes per frame
+        if n_samples == 0:
+            return
+        samples = struct.unpack(f'<{n_samples * 2}h', data[:n_samples * 4])
+        left_channel = samples[0::2]
+
+        self._pcm_buffer.extend(left_channel)
+
+        # Keep buffer at 0.5s max
+        if len(self._pcm_buffer) > self._pcm_buffer_max:
+            self._pcm_buffer = self._pcm_buffer[-self._pcm_buffer_max:]
+
+        # Need at least 0.3s of data to analyze
+        if len(self._pcm_buffer) < 14400:
+            return
+
+        # Run Goertzel for trigger frequency
+        mag = _goertzel_magnitude(
+            self._pcm_buffer, self._trigger_freq, 48000
+        )
+
+        # Debug: log magnitude every ~2 seconds
+        now = time.time()
+        if not hasattr(self, '_last_mag_log'):
+            self._last_mag_log = 0.0
+        if now - self._last_mag_log > 2.0 and mag > 0.001:
+            self._last_mag_log = now
+            self.log_message.emit(f"[DEBUG] Tone {self._trigger_freq:.0f}Hz mag={mag:.6f} (threshold={self._trigger_threshold})")
+
+        if mag > self._trigger_threshold:
+            if self._subsonic_detected_time == 0.0:
+                self._subsonic_detected_time = now
+            elif (now - self._subsonic_detected_time) >= 0.3:
+                # Tone detected for 0.3s+ — trigger!
+                self._subsonic_triggered = True
+                self._auto_stop_fired = True
+                self._auto_stop_cooldown = now + 30.0  # 30s cooldown
+                reason = f"Trigger tone detected ({self._trigger_freq:.0f}Hz, mag={mag:.4f})"
+                self.log_message.emit(f"AUTO-STOP: {reason}")
+                self.auto_stop_triggered.emit("tone", reason)
+                self._pcm_buffer.clear()
+        else:
+            self._subsonic_detected_time = 0.0
 
     def _on_state_changed(self, state: StreamState) -> None:
         """Handle engine state changes."""
@@ -143,14 +238,19 @@ class HealthMonitor(QObject):
 
         if has_audio:
             self._last_audio_time = now
+            if not self._has_received_audio:
+                self._has_received_audio = True
             if self._silence_warning_sent or self._silence_alert_sent:
                 self._silence_warning_sent = False
                 self._silence_alert_sent = False
                 self.silence_cleared.emit()
                 self.log_message.emit("Audio resumed — silence cleared")
             # Reset auto-stop so it can trigger again next time
-            if self._auto_stop_fired:
+            if self._auto_stop_fired and time.time() > self._auto_stop_cooldown:
                 self._auto_stop_fired = False
+                self._subsonic_triggered = False
+                self._subsonic_detected_time = 0.0
+                self._pcm_buffer.clear()
                 self.log_message.emit("Auto-stop reset — ready for next silence event")
 
         # Track silence state for auto-stop
@@ -228,14 +328,34 @@ class HealthMonitor(QObject):
         if silence_duration < 1.0:
             self._failover_fired = False
 
-        # Auto-stop check (silence or tone)
+        # Auto-stop check (silence or tone) — only after real audio received
         auto_stop_cfg = self._config.silence.auto_stop
-        if auto_stop_cfg.enabled and not self._auto_stop_fired:
-            # Check silence-based auto-stop
+        if auto_stop_cfg.enabled and not self._auto_stop_fired and self._has_received_audio:
+            # Check time window (only allow during configured minutes)
+            import datetime as _dt
+            _now = _dt.datetime.now()
+            _minute = _now.minute
+            if not (auto_stop_cfg.window_start_min <= _minute <= auto_stop_cfg.window_end_min):
+                return  # Outside time window
+            # Check disabled period (e.g., Friday 14:00 to Saturday 17:00)
+            _day = _now.weekday()
+            _hour = _now.hour
+            _current = _day * 24 + _hour
+            _start = auto_stop_cfg.disable_from_day * 24 + auto_stop_cfg.disable_from_hour
+            _end = auto_stop_cfg.disable_to_day * 24 + auto_stop_cfg.disable_to_hour
+            if _start <= _end:
+                if _start <= _current < _end:
+                    return  # In disabled period
+            else:
+                if _current >= _start or _current < _end:
+                    return  # In disabled period (wraps around week)
+
+            # Check silence-based auto-stop (respects cooldown)
             if (self._is_silent
                     and self._silence_start_time > 0
                     and (now - self._silence_start_time) >= auto_stop_cfg.delay_s):
                 self._auto_stop_fired = True
+                self._auto_stop_cooldown = now + 30.0  # 30s cooldown
                 reason = f"Silence detected for {auto_stop_cfg.delay_s:.0f}s"
                 self.log_message.emit(f"AUTO-STOP: {reason}")
                 self.auto_stop_triggered.emit("silence", reason)

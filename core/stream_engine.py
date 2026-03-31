@@ -77,6 +77,7 @@ class StreamEngine(QObject):
             if sys.platform == "win32":
                 return [
                     "-f", "dshow",
+                    "-audio_buffer_size", "50",
                     "-i", f"audio={self._device}",
                 ]
             elif sys.platform == "darwin":
@@ -105,7 +106,15 @@ class StreamEngine(QObject):
         cmd = [self._ffmpeg_path, "-y", "-hide_banner", "-loglevel", "info"]
 
         if self._device:
-            # Device capture: no low-latency network flags
+            # Device capture: low-latency flags for dshow
+            if sys.platform == "win32" and not self._device.startswith("wasapi:"):
+                cmd += [
+                    "-fflags", "nobuffer",
+                    "-flags", "low_delay",
+                    "-analyzeduration", "0",
+                    "-probesize", "32",
+                    "-thread_queue_size", "512",
+                ]
             cmd += input_args
         else:
             # Stream URL: use low-latency flags

@@ -94,6 +94,12 @@ class MainWindow(QMainWindow):
         self._uptime_timer.setInterval(1000)
         self._uptime_timer.timeout.connect(self._update_uptime)
 
+        # mAirList connection check timer (every 5 seconds)
+        self._mairlist_timer = QTimer(self)
+        self._mairlist_timer.setInterval(5000)
+        self._mairlist_timer.timeout.connect(self._check_mairlist_connection)
+        self._mairlist_timer.start()
+
     def _init_ui(self) -> None:
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -273,9 +279,9 @@ class MainWindow(QMainWindow):
 
         # --- Footer ---
         footer_row = QHBoxLayout()
-        port_label = QLabel(f"Port: {self._config.port}")
-        port_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_MUTED};")
-        footer_row.addWidget(port_label)
+        self._mairlist_status_label = QLabel("● mAirList")
+        self._mairlist_status_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_MUTED};")
+        footer_row.addWidget(self._mairlist_status_label)
         footer_row.addStretch()
         self._about_btn = QPushButton("?")
         self._about_btn.setObjectName("smallBtn")
@@ -551,11 +557,23 @@ class MainWindow(QMainWindow):
         """Handle auto-stop triggered by silence or tone detection."""
         self._add_log(f"{detection_type.upper()} DETECTED: {reason}")
 
-        # Execute configured mAirList actions
-        if self._config.silence.auto_stop.trigger_mairlist:
-            actions = self._mairlist_api.execute_auto_stop_actions(detection_type)
-            for desc in actions:
-                self._add_log(f"mAirList: {desc}")
+        # Send mAirList commands when streaming, within time window, not in disabled period
+        if self._config.silence.auto_stop.trigger_mairlist and self._is_streaming:
+            from datetime import datetime
+            now = datetime.now()
+            minute = now.minute
+            cfg = self._config.silence.auto_stop
+
+            # Check disabled period (e.g., Friday 14:00 to Saturday 17:00)
+            in_disabled = self._is_in_disabled_period(now, cfg)
+            if in_disabled:
+                self._add_log(f"mAirList: skipped (disabled period)")
+            elif cfg.window_start_min <= minute <= cfg.window_end_min:
+                actions = self._mairlist_api.execute_auto_stop_actions(detection_type)
+                for desc in actions:
+                    self._add_log(f"mAirList: {desc}")
+            else:
+                self._add_log(f"mAirList: skipped (minute {minute}, window {cfg.window_start_min}-{cfg.window_end_min})")
 
         # Only stop the stream if configured to do so
         if self._config.silence.auto_stop.stop_stream:
@@ -678,6 +696,40 @@ class MainWindow(QMainWindow):
         )
 
     # --- Utilities ---
+
+    @staticmethod
+    def _is_in_disabled_period(now, cfg) -> bool:
+        """Check if current time is within the disabled period."""
+        day = now.weekday()  # 0=Mon..6=Sun
+        hour = now.hour
+        # Convert to comparable values: day * 24 + hour
+        current = day * 24 + hour
+        start = cfg.disable_from_day * 24 + cfg.disable_from_hour
+        end = cfg.disable_to_day * 24 + cfg.disable_to_hour
+        if start <= end:
+            return start <= current < end
+        else:
+            # Wraps around week (e.g., Sat to Mon)
+            return current >= start or current < end
+
+    def _check_mairlist_connection(self) -> None:
+        """Update mAirList status based on stream clients."""
+        clients = self._relay.client_count
+        if clients > 0:
+            self._mairlist_status_label.setStyleSheet(
+                f"font-size: {FONT_SM}px; color: {SUCCESS};"
+            )
+            self._mairlist_status_label.setText(f"● Stream: {clients} client{'s' if clients > 1 else ''}")
+        elif self._is_streaming:
+            self._mairlist_status_label.setStyleSheet(
+                f"font-size: {FONT_SM}px; color: {WARNING};"
+            )
+            self._mairlist_status_label.setText("● Stream: no clients")
+        else:
+            self._mairlist_status_label.setStyleSheet(
+                f"font-size: {FONT_SM}px; color: {TEXT_MUTED};"
+            )
+            self._mairlist_status_label.setText("● Stream: idle")
 
     def _update_uptime(self) -> None:
         self._uptime_label.setText(self._health_monitor.uptime_str)

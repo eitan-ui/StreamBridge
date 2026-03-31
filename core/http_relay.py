@@ -16,7 +16,7 @@ CHANNELS = 2
 BYTES_PER_SAMPLE = 2
 BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
 SILENCE_FRAME = b"\x00" * (BYTES_PER_SECOND // 100)  # 10ms = 1920 bytes
-PCM_CHUNK_SIZE = 512  # ~2.7ms of audio per chunk
+PCM_CHUNK_SIZE = 3840  # 20ms of audio (48000 * 2 * 2 / 50)
 
 
 def _make_wav_header(sample_rate=48000, channels=2, bits=16) -> bytes:
@@ -125,7 +125,7 @@ class HttpRelay(QObject):
         self._api_runner: web.AppRunner | None = None
         self._api_site: web.TCPSite | None = None
 
-        self._pcm_buffer = RingBuffer(max_seconds=0.2)
+        self._pcm_buffer = RingBuffer(max_seconds=1.0)
         self._client_queues: dict[web.StreamResponse, asyncio.Queue] = {}
         self._client_queues_lock = threading.Lock()
         self._clients: Set[web.StreamResponse] = set()
@@ -258,25 +258,24 @@ class HttpRelay(QObject):
 
     def _distribute_loop(self) -> None:
         """Reads PCM from buffer and distributes to all client queues.
+        Drains all available data at once to minimize event loop callbacks.
         Sends silence when buffer is empty to keep the stream alive."""
         last_pcm_time = 0.0
         while self._running:
-            pcm = self._pcm_buffer.read_chunk(PCM_CHUNK_SIZE)
+            # Drain ALL available PCM at once — one callback instead of many
+            pcm = self._pcm_buffer.read_all()
             if pcm:
                 last_pcm_time = time.monotonic()
                 self._enqueue_to_clients(pcm)
+                time.sleep(0.015)  # pace: ~66 sends/sec, 15ms latency
             else:
                 time_since_pcm = time.monotonic() - last_pcm_time
                 if time_since_pcm > 0.05:
                     with self._client_queues_lock:
                         has_clients = bool(self._client_queues)
                     if has_clients:
-                        # Feed silence in PCM_CHUNK_SIZE portions
-                        for i in range(0, len(SILENCE_FRAME), PCM_CHUNK_SIZE):
-                            chunk = SILENCE_FRAME[i:i + PCM_CHUNK_SIZE]
-                            if chunk:
-                                self._enqueue_to_clients(chunk)
-                time.sleep(0.005)
+                        self._enqueue_to_clients(SILENCE_FRAME)
+                time.sleep(0.010)
 
     def _enqueue_to_clients(self, data: bytes) -> None:
         """Put a PCM chunk into every client's queue (thread-safe)."""
@@ -320,7 +319,7 @@ class HttpRelay(QObject):
         await response.write(WAV_HEADER)
 
         # Create per-client queue
-        client_queue: asyncio.Queue = asyncio.Queue(maxsize=60)
+        client_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
         with self._client_queues_lock:
             self._client_queues[response] = client_queue
         with self._clients_lock:
