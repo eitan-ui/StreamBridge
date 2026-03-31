@@ -11,7 +11,7 @@ from models.config import Config
 from utils.audio_levels import AudioLevels
 
 
-def _goertzel_magnitude(samples: list[int], target_freq: float,
+def _goertzel_magnitude(samples: list, target_freq: float,
                          sample_rate: int) -> float:
     """Detect magnitude of a specific frequency using Goertzel algorithm."""
     n = len(samples)
@@ -27,6 +27,31 @@ def _goertzel_magnitude(samples: list[int], target_freq: float,
         s1 = s0
     magnitude = math.sqrt(s1 * s1 + s2 * s2 - coeff * s1 * s2)
     return magnitude / n
+
+
+def _apply_hanning(samples: list) -> list[float]:
+    """Apply Hanning window to reduce spectral leakage."""
+    n = len(samples)
+    if n == 0:
+        return []
+    factor = 2.0 * math.pi / n
+    return [s * (0.5 - 0.5 * math.cos(factor * i))
+            for i, s in enumerate(samples)]
+
+
+def _goertzel_snr(samples: list, target_freq: float,
+                  neighbor_freqs: list[float],
+                  sample_rate: int) -> tuple[float, float, float]:
+    """Compute SNR of target frequency vs neighbors.
+
+    Returns (target_mag, snr_ratio, avg_neighbor_mag).
+    """
+    windowed = _apply_hanning(samples)
+    target_mag = _goertzel_magnitude(windowed, target_freq, sample_rate)
+    neighbor_mags = [_goertzel_magnitude(windowed, f, sample_rate)
+                     for f in neighbor_freqs]
+    avg_neighbor = max(sum(neighbor_mags) / len(neighbor_mags), 1e-9)
+    return target_mag, target_mag / avg_neighbor, avg_neighbor
 
 
 class HealthMonitor(QObject):
@@ -73,14 +98,14 @@ class HealthMonitor(QObject):
         self._recent_levels: list[float] = []
         self._recent_peaks: list[float] = []
 
-        # Trigger tone detection
+        # Trigger tone detection (SNR-based with sliding window)
         self._pcm_buffer: list[int] = []
+        self._pcm_buffer_r: list[int] = []  # right channel
         self._pcm_buffer_max = 24000  # 0.5s at 48kHz (mono samples)
-        self._trigger_freq = 16000.0
-        self._trigger_threshold = 0.01  # magnitude threshold
         self._subsonic_detected_time: float = 0.0
         self._subsonic_triggered = False
         self._auto_stop_cooldown: float = 0.0  # timestamp when cooldown ends
+        self._tone_hit_history: list[bool] = []  # sliding window of detections
 
         # Failover tracking
         self._failover_silence_start: float = 0.0
@@ -147,9 +172,11 @@ class HealthMonitor(QObject):
         self._failover_fired = False
         self._failover_silence_start = 0.0
         self._pcm_buffer.clear()
+        self._pcm_buffer_r.clear()
         self._subsonic_detected_time = 0.0
         self._subsonic_triggered = False
         self._auto_stop_cooldown = 0.0
+        self._tone_hit_history.clear()
         self._timer.start()
 
     def stop_monitoring(self) -> None:
@@ -161,8 +188,9 @@ class HealthMonitor(QObject):
         self._silence_alert_sent = False
 
     def _on_pcm_data(self, data: bytes) -> None:
-        """Analyze raw PCM for trigger tone."""
-        if not self._config.silence.auto_stop.enabled:
+        """Analyze raw PCM for trigger tone using SNR-based detection."""
+        tone_cfg = self._config.silence.tone
+        if not tone_cfg.enabled:
             return
         if self._subsonic_triggered:
             return
@@ -170,52 +198,92 @@ class HealthMonitor(QObject):
         import datetime as _dt
         _now = _dt.datetime.now()
         _minute = _now.minute
-        cfg = self._config.silence.auto_stop
-        if not (cfg.window_start_min <= _minute <= cfg.window_end_min):
+        auto_cfg = self._config.silence.auto_stop
+        if not (auto_cfg.window_start_min <= _minute <= auto_cfg.window_end_min):
             return
 
-        # Extract left channel samples (every other 16-bit sample)
-        n_samples = len(data) // 4  # stereo 16-bit = 4 bytes per frame
+        # Extract both channel samples (stereo 16-bit = 4 bytes per frame)
+        n_samples = len(data) // 4
         if n_samples == 0:
             return
         samples = struct.unpack(f'<{n_samples * 2}h', data[:n_samples * 4])
         left_channel = samples[0::2]
+        right_channel = samples[1::2]
 
         self._pcm_buffer.extend(left_channel)
+        self._pcm_buffer_r.extend(right_channel)
 
-        # Keep buffer at 0.5s max
+        # Keep buffers at 0.5s max
         if len(self._pcm_buffer) > self._pcm_buffer_max:
             self._pcm_buffer = self._pcm_buffer[-self._pcm_buffer_max:]
+        if len(self._pcm_buffer_r) > self._pcm_buffer_max:
+            self._pcm_buffer_r = self._pcm_buffer_r[-self._pcm_buffer_max:]
 
         # Need at least 0.3s of data to analyze
         if len(self._pcm_buffer) < 14400:
             return
 
-        # Run Goertzel for trigger frequency
-        mag = _goertzel_magnitude(
-            self._pcm_buffer, self._trigger_freq, 48000
+        # Run SNR analysis on both channels
+        neighbor_freqs = tone_cfg.get_neighbor_freqs()
+        target_freq = tone_cfg.frequency_hz
+
+        mag_l, snr_l, _ = _goertzel_snr(
+            self._pcm_buffer, target_freq, neighbor_freqs, 48000
+        )
+        mag_r, snr_r, _ = _goertzel_snr(
+            self._pcm_buffer_r, target_freq, neighbor_freqs, 48000
         )
 
-        # Debug: log magnitude every ~2 seconds
+        # Take best channel
+        target_mag = max(mag_l, mag_r)
+        snr = max(snr_l, snr_r)
+
+        # Determine if this analysis is a hit
+        is_hit = (snr >= tone_cfg.snr_threshold
+                  and target_mag >= tone_cfg.min_magnitude)
+
+        # Update sliding window
+        self._tone_hit_history.append(is_hit)
+        if len(self._tone_hit_history) > tone_cfg.hit_window_size:
+            self._tone_hit_history = self._tone_hit_history[-tone_cfg.hit_window_size:]
+
+        # Debug: log every ~2 seconds
         now = time.time()
         if not hasattr(self, '_last_mag_log'):
             self._last_mag_log = 0.0
-        if now - self._last_mag_log > 2.0 and mag > 0.001:
+        if now - self._last_mag_log > 2.0 and target_mag > 0.001:
             self._last_mag_log = now
-            self.log_message.emit(f"[DEBUG] Tone {self._trigger_freq:.0f}Hz mag={mag:.6f} (threshold={self._trigger_threshold})")
+            hits = sum(self._tone_hit_history)
+            total = len(self._tone_hit_history)
+            self.log_message.emit(
+                f"[DEBUG] Tone {target_freq:.0f}Hz "
+                f"mag={target_mag:.6f} snr={snr:.2f} "
+                f"hits={hits}/{total} "
+                f"(need snr>={tone_cfg.snr_threshold}, mag>={tone_cfg.min_magnitude})"
+            )
 
-        if mag > self._trigger_threshold:
-            if self._subsonic_detected_time == 0.0:
-                self._subsonic_detected_time = now
-            elif (now - self._subsonic_detected_time) >= 0.3:
-                # Tone detected for 0.3s+ — trigger!
-                self._subsonic_triggered = True
-                self._auto_stop_fired = True
-                self._auto_stop_cooldown = now + 30.0  # 30s cooldown
-                reason = f"Trigger tone detected ({self._trigger_freq:.0f}Hz, mag={mag:.4f})"
-                self.log_message.emit(f"AUTO-STOP: {reason}")
-                self.auto_stop_triggered.emit("tone", reason)
-                self._pcm_buffer.clear()
+        # Check hit ratio in sliding window
+        if len(self._tone_hit_history) >= 5:
+            hit_ratio = sum(self._tone_hit_history) / len(self._tone_hit_history)
+            if hit_ratio >= tone_cfg.hit_ratio:
+                if self._subsonic_detected_time == 0.0:
+                    self._subsonic_detected_time = now
+                elif (now - self._subsonic_detected_time) >= tone_cfg.confirmation_s:
+                    # Tone confirmed — trigger!
+                    self._subsonic_triggered = True
+                    self._auto_stop_fired = True
+                    self._auto_stop_cooldown = now + 30.0
+                    reason = (
+                        f"Trigger tone detected ({target_freq:.0f}Hz, "
+                        f"snr={snr:.1f}, mag={target_mag:.4f})"
+                    )
+                    self.log_message.emit(f"AUTO-STOP: {reason}")
+                    self.auto_stop_triggered.emit("tone", reason)
+                    self._pcm_buffer.clear()
+                    self._pcm_buffer_r.clear()
+                    self._tone_hit_history.clear()
+            else:
+                self._subsonic_detected_time = 0.0
         else:
             self._subsonic_detected_time = 0.0
 
@@ -251,6 +319,8 @@ class HealthMonitor(QObject):
                 self._subsonic_triggered = False
                 self._subsonic_detected_time = 0.0
                 self._pcm_buffer.clear()
+                self._pcm_buffer_r.clear()
+                self._tone_hit_history.clear()
                 self.log_message.emit("Auto-stop reset — ready for next silence event")
 
         # Track silence state for auto-stop
@@ -265,7 +335,7 @@ class HealthMonitor(QObject):
                 self._silence_start_time = 0.0
 
             # Tone detection: track crest factor over recent samples
-            if auto_stop_cfg.tone_detection_enabled and has_audio:
+            if self._config.silence.tone.enabled and has_audio:
                 self._recent_levels.append(
                     max(levels.left_db, levels.right_db)
                 )

@@ -64,8 +64,8 @@ class MairListConfig:
 class SilenceAutoStopConfig:
     enabled: bool = False
     delay_s: float = 2.0
-    tone_detection_enabled: bool = False
-    tone_max_crest_db: float = 6.0
+    tone_detection_enabled: bool = False  # legacy, use ToneDetectionConfig.enabled
+    tone_max_crest_db: float = 6.0       # legacy, kept for JSON compat
     trigger_mairlist: bool = True
     stop_stream: bool = True
     window_start_min: int = 0   # minute of hour to start allowing NEXT (0 = top of hour)
@@ -77,11 +77,45 @@ class SilenceAutoStopConfig:
 
 
 @dataclass
+class ToneDetectionConfig:
+    enabled: bool = False
+    frequency_hz: float = 17000.0         # frequency to detect (configurable)
+    snr_threshold: float = 3.0            # min ratio target/neighbors
+    min_magnitude: float = 0.002          # absolute floor to reject noise
+    neighbor_freqs: str = "15000,16000,18000,19000"  # comma-separated Hz
+    confirmation_s: float = 0.3           # min detection duration before trigger
+    hit_ratio: float = 0.5               # fraction of window that must detect
+    hit_window_size: int = 10            # sliding window size
+
+    def get_neighbor_freqs(self) -> list[float]:
+        """Parse neighbor_freqs string into list of floats."""
+        try:
+            return [float(f.strip()) for f in self.neighbor_freqs.split(",") if f.strip()]
+        except ValueError:
+            return [15000.0, 16000.0, 18000.0, 19000.0]
+
+    def validate(self) -> None:
+        if not (100.0 <= self.frequency_hz <= 22000.0):
+            self.frequency_hz = max(100.0, min(22000.0, self.frequency_hz))
+        if self.snr_threshold < 1.0:
+            self.snr_threshold = 1.0
+        if self.min_magnitude < 0.0001:
+            self.min_magnitude = 0.0001
+        if self.confirmation_s < 0.1:
+            self.confirmation_s = 0.1
+        if not (0.1 <= self.hit_ratio <= 1.0):
+            self.hit_ratio = max(0.1, min(1.0, self.hit_ratio))
+        if self.hit_window_size < 3:
+            self.hit_window_size = 3
+
+
+@dataclass
 class SilenceConfig:
     threshold_db: float = -50.0
     warning_delay_s: int = 10
     alert_delay_s: int = 30
     auto_stop: SilenceAutoStopConfig = field(default_factory=SilenceAutoStopConfig)
+    tone: ToneDetectionConfig = field(default_factory=ToneDetectionConfig)
 
     def validate(self) -> None:
         if not (-100.0 <= self.threshold_db <= 0.0):
@@ -92,8 +126,7 @@ class SilenceConfig:
             self.alert_delay_s = 1
         if self.auto_stop.delay_s < 0.5:
             self.auto_stop.delay_s = 0.5
-        if not (0.0 <= self.auto_stop.tone_max_crest_db <= 20.0):
-            self.auto_stop.tone_max_crest_db = max(0.0, min(20.0, self.auto_stop.tone_max_crest_db))
+        self.tone.validate()
 
 
 @dataclass
@@ -196,6 +229,7 @@ class Config:
         if not (1024 <= self.pcm_server_port <= 65535):
             self.pcm_server_port = max(1024, min(65535, self.pcm_server_port))
         self.silence.validate()
+        self.silence.tone.validate()
         self.reconnect.validate()
         self.tunnel.validate()
         self.failover.validate()
@@ -218,14 +252,27 @@ class Config:
                 data = json.load(f)
             silence_data = data.get("silence", {})
             auto_stop_data = silence_data.pop("auto_stop", {})
+            tone_data = silence_data.pop("tone", {})
+            # Filter to known fields only
+            auto_stop_known = {k: v for k, v in auto_stop_data.items()
+                               if k in SilenceAutoStopConfig.__dataclass_fields__}
+            tone_known = {k: v for k, v in tone_data.items()
+                         if k in ToneDetectionConfig.__dataclass_fields__}
+            # Migrate legacy: if old config had tone_detection_enabled, use it
+            if not tone_data and auto_stop_data.get("tone_detection_enabled"):
+                tone_known["enabled"] = True
+            silence_known = {k: v for k, v in silence_data.items()
+                            if k in SilenceConfig.__dataclass_fields__
+                            and k not in ("auto_stop", "tone")}
             cfg = cls(
                 port=data.get("port", 9000),
                 audio_input_device=data.get("audio_input_device", ""),
                 pcm_server_port=data.get("pcm_server_port", 8765),
                 ffmpeg_path=data.get("ffmpeg_path", "ffmpeg"),
                 silence=SilenceConfig(
-                    **silence_data,
-                    auto_stop=SilenceAutoStopConfig(**auto_stop_data),
+                    **silence_known,
+                    auto_stop=SilenceAutoStopConfig(**auto_stop_known),
+                    tone=ToneDetectionConfig(**tone_known),
                 ),
                 reconnect=ReconnectConfig(**data.get("reconnect", {})),
                 alerts=AlertConfig(

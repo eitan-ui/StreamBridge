@@ -6,10 +6,12 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+import dataclasses
+
 from models.config import (
     Config, WhatsAppConfig, AlertConfig, SilenceConfig, ReconnectConfig,
-    SilenceAutoStopConfig, MairListConfig, ApiConfig, TunnelConfig,
-    ScheduleConfig,
+    SilenceAutoStopConfig, ToneDetectionConfig, MairListConfig, ApiConfig,
+    TunnelConfig, ScheduleConfig,
 )
 from gui.theme import (
     FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -22,61 +24,26 @@ from gui.frameless import FramelessDialog
 class SettingsDialog(FramelessDialog):
     def __init__(self, config: Config, parent=None) -> None:
         super().__init__(parent, title="Settings")
-        self._config = Config(
-            port=config.port,
-            audio_input_device=config.audio_input_device,
-            pcm_server_port=config.pcm_server_port,
-            ffmpeg_path=config.ffmpeg_path,
-            silence=SilenceConfig(
-                threshold_db=config.silence.threshold_db,
-                warning_delay_s=config.silence.warning_delay_s,
-                alert_delay_s=config.silence.alert_delay_s,
-                auto_stop=SilenceAutoStopConfig(
-                    enabled=config.silence.auto_stop.enabled,
-                    delay_s=config.silence.auto_stop.delay_s,
-                    tone_detection_enabled=config.silence.auto_stop.tone_detection_enabled,
-                    tone_max_crest_db=config.silence.auto_stop.tone_max_crest_db,
-                    trigger_mairlist=config.silence.auto_stop.trigger_mairlist,
-                    stop_stream=config.silence.auto_stop.stop_stream,
-                ),
+        self._config = dataclasses.replace(
+            config,
+            silence=dataclasses.replace(
+                config.silence,
+                auto_stop=dataclasses.replace(config.silence.auto_stop),
+                tone=dataclasses.replace(config.silence.tone),
             ),
-            reconnect=ReconnectConfig(
-                initial_delay_s=config.reconnect.initial_delay_s,
-                max_delay_s=config.reconnect.max_delay_s,
-                max_retries=config.reconnect.max_retries,
+            reconnect=dataclasses.replace(config.reconnect),
+            alerts=dataclasses.replace(
+                config.alerts,
+                whatsapp=dataclasses.replace(config.alerts.whatsapp),
             ),
-            alerts=AlertConfig(
-                sound_enabled=config.alerts.sound_enabled,
-                whatsapp=WhatsAppConfig(
-                    enabled=config.alerts.whatsapp.enabled,
-                    service=config.alerts.whatsapp.service,
-                    phone=config.alerts.whatsapp.phone,
-                    api_key=config.alerts.whatsapp.api_key,
-                    custom_url=config.alerts.whatsapp.custom_url,
-                ),
-            ),
-            mairlist=MairListConfig(
-                enabled=config.mairlist.enabled,
-                api_url=config.mairlist.api_url,
-                command=config.mairlist.command,
-                silence_command=config.mairlist.silence_command,
-                tone_command=config.mairlist.tone_command,
-                action_next=config.mairlist.action_next,
-                action_delete_item=config.mairlist.action_delete_item,
-                action_change_timing=config.mairlist.action_change_timing,
-                action_timing_value=config.mairlist.action_timing_value,
-                action_player=config.mairlist.action_player,
-                action_playlist=config.mairlist.action_playlist,
-            ),
-            api=ApiConfig(
-                token=config.api.token,
-                allow_remote=config.api.allow_remote,
-            ),
-            schedule=ScheduleConfig(
-                enabled=config.schedule.enabled,
+            mairlist=dataclasses.replace(config.mairlist),
+            api=dataclasses.replace(config.api),
+            schedule=dataclasses.replace(
+                config.schedule,
                 entries=list(config.schedule.entries),
-                keep_playing_on_gap=config.schedule.keep_playing_on_gap,
             ),
+            tunnel=dataclasses.replace(config.tunnel),
+            failover=dataclasses.replace(config.failover),
         )
 
         self.setFixedSize(700, 780)
@@ -149,68 +116,133 @@ class SettingsDialog(FramelessDialog):
 
     def _create_silence_tab(self) -> QWidget:
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
         layout.setSpacing(12)
 
-        # Detection thresholds
-        detect_group = QGroupBox("Detection")
-        form = QFormLayout(detect_group)
-        form.setSpacing(SPACING_MD)
+        # --- Group 1: Silence Detection ---
+        silence_group = QGroupBox("Silence Detection")
+        silence_form = QFormLayout(silence_group)
+        silence_form.setSpacing(SPACING_MD)
 
         self._threshold_spin = QDoubleSpinBox()
         self._threshold_spin.setRange(-80.0, 0.0)
         self._threshold_spin.setSuffix(" dB")
         self._threshold_spin.setValue(self._config.silence.threshold_db)
-        form.addRow("Threshold:", self._threshold_spin)
+        silence_form.addRow("Threshold:", self._threshold_spin)
 
         self._warning_spin = QSpinBox()
         self._warning_spin.setRange(1, 300)
         self._warning_spin.setSuffix(" seconds")
         self._warning_spin.setValue(self._config.silence.warning_delay_s)
-        form.addRow("Warning delay:", self._warning_spin)
+        silence_form.addRow("Warning delay:", self._warning_spin)
 
         self._alert_spin = QSpinBox()
         self._alert_spin.setRange(1, 600)
         self._alert_spin.setSuffix(" seconds")
         self._alert_spin.setValue(self._config.silence.alert_delay_s)
-        form.addRow("Alert delay:", self._alert_spin)
+        silence_form.addRow("Alert delay:", self._alert_spin)
 
-        layout.addWidget(detect_group)
-
-        # Auto-stop settings
-        auto_group = QGroupBox("Auto-Stop & mAirList Trigger")
-        auto_form = QFormLayout(auto_group)
-        auto_form.setSpacing(SPACING_MD)
-
-        self._auto_stop_check = QCheckBox("Enable auto-stop on silence/tone")
+        self._auto_stop_check = QCheckBox("Enable auto-stop on silence")
         self._auto_stop_check.setChecked(self._config.silence.auto_stop.enabled)
-        auto_form.addRow(self._auto_stop_check)
+        silence_form.addRow(self._auto_stop_check)
 
         self._auto_stop_delay_spin = QDoubleSpinBox()
         self._auto_stop_delay_spin.setRange(0.5, 30.0)
         self._auto_stop_delay_spin.setSuffix(" seconds")
         self._auto_stop_delay_spin.setDecimals(1)
         self._auto_stop_delay_spin.setValue(self._config.silence.auto_stop.delay_s)
-        auto_form.addRow("Auto-stop delay:", self._auto_stop_delay_spin)
+        silence_form.addRow("Silence auto-stop delay:", self._auto_stop_delay_spin)
 
-        self._tone_detect_check = QCheckBox("Detect signal tones (test tone, carrier)")
-        self._tone_detect_check.setChecked(self._config.silence.auto_stop.tone_detection_enabled)
-        auto_form.addRow(self._tone_detect_check)
+        layout.addWidget(silence_group)
 
-        self._tone_crest_spin = QDoubleSpinBox()
-        self._tone_crest_spin.setRange(1.0, 20.0)
-        self._tone_crest_spin.setSuffix(" dB")
-        self._tone_crest_spin.setDecimals(1)
-        self._tone_crest_spin.setValue(self._config.silence.auto_stop.tone_max_crest_db)
-        self._tone_crest_spin.setToolTip(
-            "Max crest factor to consider as a tone. "
-            "Pure tones have ~3dB, normal audio 12-20dB."
+        # --- Group 2: Tone Detection ---
+        tone_group = QGroupBox("Tone Detection")
+        tone_form = QFormLayout(tone_group)
+        tone_form.setSpacing(SPACING_MD)
+
+        self._tone_detect_check = QCheckBox("Enable tone detection")
+        self._tone_detect_check.setChecked(self._config.silence.tone.enabled)
+        tone_form.addRow(self._tone_detect_check)
+
+        self._tone_freq_spin = QSpinBox()
+        self._tone_freq_spin.setRange(1000, 20000)
+        self._tone_freq_spin.setSuffix(" Hz")
+        self._tone_freq_spin.setSingleStep(1000)
+        self._tone_freq_spin.setValue(int(self._config.silence.tone.frequency_hz))
+        self._tone_freq_spin.setToolTip(
+            "Frequency of the trigger tone to detect.\n"
+            "Common: 17000 Hz (inaudible), 1000 Hz (test tone)."
         )
-        auto_form.addRow("Tone crest threshold:", self._tone_crest_spin)
+        tone_form.addRow("Frequency:", self._tone_freq_spin)
+
+        self._tone_snr_spin = QDoubleSpinBox()
+        self._tone_snr_spin.setRange(1.5, 10.0)
+        self._tone_snr_spin.setDecimals(1)
+        self._tone_snr_spin.setSingleStep(0.5)
+        self._tone_snr_spin.setValue(self._config.silence.tone.snr_threshold)
+        self._tone_snr_spin.setToolTip(
+            "How much stronger the tone must be compared to\n"
+            "neighboring frequencies. Lower = more sensitive.\n"
+            "3.0 works well for most cases."
+        )
+        tone_form.addRow("SNR threshold:", self._tone_snr_spin)
+
+        self._tone_min_mag_spin = QDoubleSpinBox()
+        self._tone_min_mag_spin.setRange(0.001, 0.1)
+        self._tone_min_mag_spin.setDecimals(4)
+        self._tone_min_mag_spin.setSingleStep(0.001)
+        self._tone_min_mag_spin.setValue(self._config.silence.tone.min_magnitude)
+        self._tone_min_mag_spin.setToolTip(
+            "Minimum absolute magnitude to consider a detection.\n"
+            "Prevents false positives from quiet noise."
+        )
+        tone_form.addRow("Min magnitude:", self._tone_min_mag_spin)
+
+        self._tone_confirm_spin = QDoubleSpinBox()
+        self._tone_confirm_spin.setRange(0.1, 5.0)
+        self._tone_confirm_spin.setSuffix(" seconds")
+        self._tone_confirm_spin.setDecimals(1)
+        self._tone_confirm_spin.setValue(self._config.silence.tone.confirmation_s)
+        self._tone_confirm_spin.setToolTip(
+            "How long the tone must be detected before triggering."
+        )
+        tone_form.addRow("Confirmation time:", self._tone_confirm_spin)
+
+        self._tone_hit_ratio_spin = QSpinBox()
+        self._tone_hit_ratio_spin.setRange(10, 100)
+        self._tone_hit_ratio_spin.setSuffix(" %")
+        self._tone_hit_ratio_spin.setValue(int(self._config.silence.tone.hit_ratio * 100))
+        self._tone_hit_ratio_spin.setToolTip(
+            "Percentage of recent analyses that must detect the tone.\n"
+            "Lower = more tolerant of momentary dips (e.g. jingles).\n"
+            "50% works well for tones mixed with music."
+        )
+        tone_form.addRow("Hit ratio:", self._tone_hit_ratio_spin)
+
+        layout.addWidget(tone_group)
+
+        # --- Group 3: mAirList & Actions (shared) ---
+        actions_group = QGroupBox("mAirList & Actions")
+        actions_form = QFormLayout(actions_group)
+        actions_form.setSpacing(SPACING_MD)
 
         self._trigger_mairlist_check = QCheckBox("Trigger mAirList playlist on auto-stop")
         self._trigger_mairlist_check.setChecked(self._config.silence.auto_stop.trigger_mairlist)
-        auto_form.addRow(self._trigger_mairlist_check)
+        actions_form.addRow(self._trigger_mairlist_check)
+
+        self._stop_stream_check = QCheckBox("Stop stream after triggering")
+        self._stop_stream_check.setChecked(self._config.silence.auto_stop.stop_stream)
+        self._stop_stream_check.setToolTip(
+            "OFF = Stream keeps running (recommended for playlist workflow).\n"
+            "The silence detection resets automatically when audio resumes,\n"
+            "so it will trigger again at the next news hour.\n\n"
+            "ON = Stream stops completely after silence is detected."
+        )
+        actions_form.addRow(self._stop_stream_check)
 
         window_row = QHBoxLayout()
         window_row.setSpacing(6)
@@ -226,9 +258,8 @@ class SettingsDialog(FramelessDialog):
         self._window_end_spin.setValue(self._config.silence.auto_stop.window_end_min)
         window_row.addWidget(QLabel("to"))
         window_row.addWidget(self._window_end_spin)
-        auto_form.addRow("Time window:", window_row)
+        actions_form.addRow("Time window:", window_row)
 
-        # Disabled period (e.g., Friday 14:00 to Saturday 17:00)
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
         disable_row = QHBoxLayout()
@@ -254,20 +285,15 @@ class SettingsDialog(FramelessDialog):
         self._disable_to_hour.setValue(self._config.silence.auto_stop.disable_to_hour)
         disable_row.addWidget(self._disable_to_day)
         disable_row.addWidget(self._disable_to_hour)
-        auto_form.addRow("Disable NEXT:", disable_row)
+        actions_form.addRow("Disable NEXT:", disable_row)
 
-        self._stop_stream_check = QCheckBox("Stop stream after triggering")
-        self._stop_stream_check.setChecked(self._config.silence.auto_stop.stop_stream)
-        self._stop_stream_check.setToolTip(
-            "OFF = Stream keeps running (recommended for playlist workflow).\n"
-            "The silence detection resets automatically when audio resumes,\n"
-            "so it will trigger again at the next news hour.\n\n"
-            "ON = Stream stops completely after silence is detected."
-        )
-        auto_form.addRow(self._stop_stream_check)
-
-        layout.addWidget(auto_group)
+        layout.addWidget(actions_group)
         layout.addStretch()
+
+        scroll.setWidget(inner)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.addWidget(scroll)
 
         return tab
 
@@ -664,8 +690,6 @@ class SettingsDialog(FramelessDialog):
         self._config.silence.alert_delay_s = self._alert_spin.value()
         self._config.silence.auto_stop.enabled = self._auto_stop_check.isChecked()
         self._config.silence.auto_stop.delay_s = self._auto_stop_delay_spin.value()
-        self._config.silence.auto_stop.tone_detection_enabled = self._tone_detect_check.isChecked()
-        self._config.silence.auto_stop.tone_max_crest_db = self._tone_crest_spin.value()
         self._config.silence.auto_stop.trigger_mairlist = self._trigger_mairlist_check.isChecked()
         self._config.silence.auto_stop.window_start_min = self._window_start_spin.value()
         self._config.silence.auto_stop.window_end_min = self._window_end_spin.value()
@@ -674,6 +698,13 @@ class SettingsDialog(FramelessDialog):
         self._config.silence.auto_stop.disable_to_day = self._disable_to_day.currentData()
         self._config.silence.auto_stop.disable_to_hour = self._disable_to_hour.value()
         self._config.silence.auto_stop.stop_stream = self._stop_stream_check.isChecked()
+
+        self._config.silence.tone.enabled = self._tone_detect_check.isChecked()
+        self._config.silence.tone.frequency_hz = float(self._tone_freq_spin.value())
+        self._config.silence.tone.snr_threshold = self._tone_snr_spin.value()
+        self._config.silence.tone.min_magnitude = self._tone_min_mag_spin.value()
+        self._config.silence.tone.confirmation_s = self._tone_confirm_spin.value()
+        self._config.silence.tone.hit_ratio = self._tone_hit_ratio_spin.value() / 100.0
 
         self._config.reconnect.initial_delay_s = self._initial_delay_spin.value()
         self._config.reconnect.max_delay_s = self._max_delay_spin.value()
