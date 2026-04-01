@@ -41,9 +41,11 @@ def find_ffmpeg(configured_path: str = "ffmpeg") -> str | None:
 def get_ffmpeg_version(path: str) -> str:
     """Get FFmpeg version string."""
     try:
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         result = subprocess.run(
             [path, "-version"], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=5
+            encoding="utf-8", errors="replace", timeout=5,
+            creationflags=creation_flags,
         )
         first_line = result.stdout.strip().split("\n")[0]
         return first_line

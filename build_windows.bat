@@ -46,9 +46,9 @@ echo.
 echo [3/5] Downloading FFmpeg...
 
 mkdir dist\ffmpeg 2>nul
-curl -L -o "dist\ffmpeg-win64.zip" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" 2>nul
+curl -L -o "dist\ffmpeg-win64.zip" "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" 2>nul
 if errorlevel 1 (
-    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile 'dist\ffmpeg-win64.zip'"
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'dist\ffmpeg-win64.zip'"
 )
 
 if exist "dist\ffmpeg-win64.zip" (

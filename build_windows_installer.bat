@@ -8,7 +8,7 @@ REM ============================================================
 set APP_NAME=StreamBridge
 set VERSION=1.0.0
 set FFMPEG_VERSION=7.1
-set FFMPEG_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+set FFMPEG_URL=https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
 set FFMPEG_ZIP=ffmpeg-win64.zip
 
 echo.

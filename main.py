@@ -118,6 +118,17 @@ def main() -> None:
         )
         sys.exit(0)
 
+    # License check
+    from utils.license import is_activated, get_license_error
+    if not is_activated():
+        from gui.activation_dialog import ActivationDialog
+        error = get_license_error()
+        dialog = ActivationDialog(reactivate=bool(error))
+        if not dialog.exec() or not dialog.activated:
+            logger.info("Not activated — exiting")
+            sys.exit(0)
+        logger.info("License activated")
+
     # Load config and check FFmpeg
     config = Config.load()
     ffmpeg_path = check_ffmpeg_or_prompt(config.ffmpeg_path)

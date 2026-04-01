@@ -1,22 +1,25 @@
 import sys
 import subprocess
+import webbrowser
 
-from PyQt6.QtWidgets import QVBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
 from gui.theme import (
     FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY,
-    ACCENT, FONT_LG, FONT_MD, SPACING_MD,
+    ACCENT, SUCCESS, WARNING, FONT_LG, FONT_MD, FONT_SM, SPACING_MD,
 )
 from gui.frameless import FramelessDialog
+from utils.license import get_licensed_username, check_for_update
 
 
 class AboutDialog(FramelessDialog):
+    VERSION = "1.0.0"
+
     def __init__(self, ffmpeg_path: str = "ffmpeg", parent=None) -> None:
         super().__init__(parent, title="About StreamBridge")
-        VERSION = "1.0.0"
-        self.setFixedSize(380, 370)
+        self.setFixedSize(380, 450)
 
         layout = self.content_layout
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -35,7 +38,7 @@ class AboutDialog(FramelessDialog):
         except Exception:
             pass
 
-        title = QLabel(f"StreamBridge v{VERSION}")
+        title = QLabel(f"StreamBridge v{self.VERSION}")
         title.setStyleSheet(f"font-size: {FONT_LG + 3}px; font-weight: bold; color: {ACCENT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
@@ -45,12 +48,32 @@ class AboutDialog(FramelessDialog):
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(desc)
 
-        layout.addSpacing(10)
+        # Author
+        author = QLabel("by Eitan Blejter")
+        author.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_SECONDARY}; font-style: italic;")
+        author.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(author)
+
+        layout.addSpacing(6)
+
+        # Licensed user
+        username = get_licensed_username()
+        if username:
+            user_label = QLabel(f"Licensed to: {username}")
+            user_label.setStyleSheet(
+                f"font-size: {FONT_SM + 1}px; color: {SUCCESS}; font-weight: 600;"
+            )
+            user_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(user_label)
+
+        layout.addSpacing(6)
 
         # System info
         ffmpeg_ver = "not found"
         try:
-            r = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=3)
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            r = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=3,
+                               creationflags=creation_flags)
             ffmpeg_ver = r.stdout.split("\n")[0].replace("ffmpeg version ", "").split(" ")[0]
         except Exception:
             pass
@@ -64,7 +87,48 @@ class AboutDialog(FramelessDialog):
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(info)
 
-        layout.addSpacing(10)
+        layout.addSpacing(6)
+
+        # Update check
+        self._update_label = QLabel("")
+        self._update_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_label.setWordWrap(True)
+        layout.addWidget(self._update_label)
+
+        self._download_url = None
+
+        btn_row = QHBoxLayout()
+
+        check_btn = QPushButton("Check for Updates")
+        check_btn.clicked.connect(self._check_update)
+        btn_row.addWidget(check_btn)
+
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        btn_row.addWidget(close_btn)
+
+        layout.addSpacing(4)
+        layout.addLayout(btn_row)
+
+    def _check_update(self) -> None:
+        self._update_label.setText("Checking...")
+        self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {TEXT_SECONDARY};")
+        self._update_label.repaint()
+
+        update = check_for_update(self.VERSION)
+        if update:
+            self._download_url = update.get("download_url", "")
+            notes = update.get("release_notes", "")
+            version = update.get("version", "?")
+            text = f"Update available: v{version}"
+            if notes:
+                text += f"\n{notes}"
+            if self._download_url:
+                text += "\nClick to download!"
+                self._update_label.setCursor(Qt.CursorShape.PointingHandCursor)
+                self._update_label.mousePressEvent = lambda e: webbrowser.open(self._download_url)
+            self._update_label.setText(text)
+            self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {WARNING}; font-weight: 600;")
+        else:
+            self._update_label.setText("You're up to date!")
+            self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
