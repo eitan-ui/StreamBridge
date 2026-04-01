@@ -5,6 +5,7 @@ On activation, the machine_id is registered in Supabase.
 On launch, the app verifies the machine_id matches.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -21,11 +22,16 @@ from models.config import APP_DATA_DIR
 logger = logging.getLogger(__name__)
 
 LICENSE_FILE = os.path.join(APP_DATA_DIR, "license.json")
-_SECRET = b"StreamBridge-2026-RadioAutomation"
 
-# Supabase config (publishable key — safe for client-side)
-_SUPABASE_URL = "https://rcmdvucxtpvmlfnphcjn.supabase.co"
-_SUPABASE_KEY = "sb_publishable_xyN5UqcZGbwaGti7N0W35Q_5zQ00TMv"
+
+def _deobfuscate(encoded: str, key: int = 0x5A) -> str:
+    raw = base64.b64decode(encoded)
+    return bytes(b ^ key for b in raw).decode()
+
+
+_SECRET = _deobfuscate("CS4oPzs3GCgzPj0/d2hqaGx3CDs+MzUbLy41NzsuMzU0").encode()
+_SUPABASE_URL = _deobfuscate("Mi4uKilgdXUoOTc+LC85Ii4qLDc2PDQqMjkwNHQpLyo7ODspP3Q5NQ==")
+_SUPABASE_KEY = _deobfuscate("KTgFKi84NjMpMjs4Nj8FIiMUbw8rOQAdOC07HS4zbRRqDWlvCwVvIAtqag4XLA==")
 
 
 def _supabase_headers() -> dict:
@@ -126,6 +132,9 @@ def _register_machine_in_supabase(username: str, activation_code: str, machine_i
     )
 
     if result and len(result) > 0:
+        # Check if deactivated by admin
+        if not result[0].get("active", True):
+            return False
         # User exists — update machine_id
         resp = _supabase_request(
             "PATCH",
@@ -157,7 +166,7 @@ def _check_machine_in_supabase(username: str, machine_id: str) -> str | None:
     import urllib.parse
     result = _supabase_request(
         "GET",
-        f"licenses?username=eq.{urllib.parse.quote(username.strip().lower())}&select=machine_id,machine_name"
+        f"licenses?username=eq.{urllib.parse.quote(username.strip().lower())}&select=machine_id,machine_name,active"
     )
 
     if result is None:
@@ -166,6 +175,10 @@ def _check_machine_in_supabase(username: str, machine_id: str) -> str | None:
 
     if len(result) == 0:
         return "License not found in server"
+
+    # Check if license has been deactivated by admin
+    if not result[0].get("active", True):
+        return "License has been deactivated. Contact support."
 
     stored_machine_id = result[0].get("machine_id", "")
     stored_machine_name = result[0].get("machine_name", "")

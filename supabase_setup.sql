@@ -8,6 +8,7 @@ create table if not exists licenses (
   activation_code text not null,
   machine_id text,          -- hardware fingerprint of active machine
   machine_name text,        -- friendly name (computer name)
+  active boolean default true,  -- set false to block user
   last_seen timestamptz,
   created_at timestamptz default now()
 );
