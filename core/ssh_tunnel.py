@@ -7,6 +7,7 @@ Equivalent to: ssh -R remote_port:localhost:local_port user@host -p port -i key 
 import asyncio
 import logging
 import os
+import sys
 from typing import Callable, Optional
 
 import asyncssh

@@ -14,8 +14,9 @@ import os
 import platform
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 from models.config import APP_DATA_DIR
 
@@ -163,7 +164,6 @@ def _register_machine_in_supabase(username: str, activation_code: str, machine_i
 
 def _check_machine_in_supabase(username: str, machine_id: str) -> str | None:
     """Check if this machine is the active one. Returns None if OK, or error message."""
-    import urllib.parse
     result = _supabase_request(
         "GET",
         f"licenses?username=eq.{urllib.parse.quote(username.strip().lower())}&select=machine_id,machine_name,active"

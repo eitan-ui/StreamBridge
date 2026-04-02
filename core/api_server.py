@@ -10,6 +10,7 @@ Provides:
 
 import asyncio
 import collections
+import hmac
 import json
 import logging
 import os
@@ -345,11 +346,12 @@ class ApiServer:
 
         # Prefer Authorization header (recommended)
         auth_header = request.headers.get("Authorization", "")
-        if auth_header == f"Bearer {token}":
+        if hmac.compare_digest(auth_header, f"Bearer {token}"):
             return await handler(request)
 
         # Also allow token as query parameter (deprecated, for backward compat)
-        if request.query.get("token") == token:
+        query_token = request.query.get("token", "")
+        if query_token and hmac.compare_digest(query_token, token):
             return await handler(request)
 
         self._record_auth_failure(ip)

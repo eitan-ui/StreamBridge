@@ -194,6 +194,7 @@ class HttpRelay(QObject):
 
         self._pcm_runner = web.AppRunner(self._pcm_app)
         await self._pcm_runner.setup()
+        # PCM stream always on all interfaces — mAirList connects from the network
         self._pcm_site = web.TCPSite(
             self._pcm_runner, "0.0.0.0", self._pcm_port
         )
