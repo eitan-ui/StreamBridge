@@ -40,6 +40,7 @@ class MairListAPI(QObject):
     def __init__(self, config: MairListConfig) -> None:
         super().__init__()
         self._config = config
+        self._tcp_lock = threading.Lock()
 
     def update_config(self, config: MairListConfig) -> None:
         self._config = config
@@ -129,66 +130,91 @@ class MairListAPI(QObject):
     def execute_auto_stop_actions(self, detection_type: str) -> list[str]:
         """Execute all configured mAirList actions for auto-stop.
 
+        All commands are sent sequentially in a single background thread
+        to avoid overwhelming mAirList's TCP server with simultaneous
+        connections.
+
         Returns list of action descriptions for logging.
         """
         if not self._config.enabled:
             return []
 
         ml = self._config
-        actions_done = []
+        commands = []
+        descriptions = []
 
-        # 1. Change timing (while item still exists)
-        if ml.action_change_timing:
-            cmd = f"PLAYLIST {ml.action_playlist} SET 0 TIMING {ml.action_timing_value}"
-            self.send_command(cmd)
-            actions_done.append(f"Timing → {ml.action_timing_value}")
+        # 1. Stop current player (required to skip stream items)
+        cmd = f"PLAYER {ml.action_player} STOP"
+        commands.append(cmd)
+        descriptions.append(f"Player {ml.action_player} STOP")
 
         # 2. Delete item from playlist
         if ml.action_delete_item:
-            self.delete_item(ml.action_playlist, 0)
-            actions_done.append(f"Deleted item from playlist {ml.action_playlist}")
+            cmd = f"PLAYLIST {ml.action_playlist} DELETE 0"
+            commands.append(cmd)
+            descriptions.append(f"Deleted item from playlist {ml.action_playlist}")
 
         # 3. Next — send configured default command (AUTOMATION 1 NEXT)
         if ml.action_next:
-            self.send_command()
-            actions_done.append(f"Command: {ml.command}")
+            commands.append(ml.command)
+            descriptions.append(f"Command: {ml.command}")
 
-        # 4. Custom command (detection-specific)
-        custom_cmd = ""
-        if detection_type == "tone":
-            custom_cmd = ml.tone_command
-        else:
-            custom_cmd = ml.silence_command
+        # 6. Custom command (detection-specific)
+        custom_cmd = (ml.tone_command if detection_type == "tone"
+                      else ml.silence_command)
         if custom_cmd:
-            self.send_command(custom_cmd)
-            actions_done.append(f"Custom: {custom_cmd}")
+            commands.append(custom_cmd)
+            descriptions.append(f"Custom: {custom_cmd}")
 
-        return actions_done
+        # Send all commands sequentially in one thread
+        if commands:
+            thread = threading.Thread(
+                target=self._send_batch, args=(commands,), daemon=True
+            )
+            thread.start()
+
+        return descriptions
+
+    @staticmethod
+    def _ms_to_mairlist_time(ms: int) -> str:
+        """Convert milliseconds to mAirList time format HH:MM:SS.mmm."""
+        total_s, remainder_ms = divmod(max(0, ms), 1000)
+        minutes, seconds = divmod(total_s, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}.{int(remainder_ms):03d}"
 
     # --- Internal TCP methods ---
 
     def _tcp_send(self, command: str, expect_response: bool = False) -> str:
-        """Send a command via TCP and optionally read the response."""
-        host, port = self._parse_host_port()
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        try:
-            sock.connect((host, port))
-            sock.sendall((command + "\r\n").encode("utf-8"))
-            if not expect_response:
-                return ""
-            # Read response (one line)
-            data = b""
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                data += chunk
-                if b"\r\n" in data or b"\n" in data:
-                    break
-            return data.decode("utf-8", errors="replace").strip()
-        finally:
-            sock.close()
+        """Send a command via TCP and optionally read the response.
+
+        Uses a lock to ensure only one TCP connection at a time,
+        since mAirList's TCP server is single-threaded.
+        Waits after sending to let mAirList process before closing.
+        """
+        import time as _time
+        with self._tcp_lock:
+            host, port = self._parse_host_port()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            try:
+                sock.connect((host, port))
+                sock.sendall((command + "\r\n").encode("utf-8"))
+                if not expect_response:
+                    _time.sleep(0.075)  # Let mAirList process before closing
+                    return ""
+                # Read response (one line)
+                data = b""
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                    if b"\r\n" in data or b"\n" in data:
+                        break
+                return data.decode("utf-8", errors="replace").strip()
+            finally:
+                sock.close()
 
     def _send(self, command: str) -> None:
         """Execute the TCP command to mAirList."""
@@ -199,6 +225,24 @@ class MairListAPI(QObject):
         except Exception as e:
             self.log_message.emit(f"ERROR: mAirList TCP failed — {e}")
             self.command_failed.emit(str(e))
+
+    def _send_batch(self, commands: list[str]) -> None:
+        """Send multiple commands sequentially, one connection per command.
+
+        Each command gets its own TCP connect→send→close cycle with a
+        small delay between commands to let mAirList process each one.
+        """
+        import time as _time
+        for i, cmd in enumerate(commands):
+            if i > 0:
+                _time.sleep(0.05)  # 50ms between commands
+            try:
+                self._tcp_send(cmd)
+                self.log_message.emit(f"mAirList command sent: {cmd}")
+                self.command_sent.emit(cmd)
+            except Exception as e:
+                self.log_message.emit(f"ERROR: mAirList TCP failed for '{cmd}' — {e}")
+                self.command_failed.emit(str(e))
 
     def _query(self, command: str) -> str:
         """Execute a TCP command and return the response body."""

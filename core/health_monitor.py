@@ -29,14 +29,19 @@ def _goertzel_magnitude(samples: list, target_freq: float,
     return magnitude / n
 
 
+_hanning_cache: dict[int, list[float]] = {}
+
+
 def _apply_hanning(samples: list) -> list[float]:
-    """Apply Hanning window to reduce spectral leakage."""
+    """Apply Hanning window to reduce spectral leakage (cached)."""
     n = len(samples)
     if n == 0:
         return []
-    factor = 2.0 * math.pi / n
-    return [s * (0.5 - 0.5 * math.cos(factor * i))
-            for i, s in enumerate(samples)]
+    if n not in _hanning_cache:
+        factor = 2.0 * math.pi / n
+        _hanning_cache[n] = [0.5 - 0.5 * math.cos(factor * i) for i in range(n)]
+    window = _hanning_cache[n]
+    return [s * w for s, w in zip(samples, window)]
 
 
 def _goertzel_snr(samples: list, target_freq: float,
@@ -102,6 +107,7 @@ class HealthMonitor(QObject):
         self._pcm_buffer: list[int] = []
         self._pcm_buffer_r: list[int] = []  # right channel
         self._pcm_buffer_max = 24000  # 0.5s at 48kHz (mono samples)
+        self._pcm_chunk_count = 0  # throttle: analyze every 4th chunk
         self._subsonic_detected_time: float = 0.0
         self._subsonic_triggered = False
         self._auto_stop_cooldown: float = 0.0  # timestamp when cooldown ends
@@ -130,6 +136,15 @@ class HealthMonitor(QObject):
         self._engine.audio_data.connect(self._on_pcm_data)
         self._engine.state_changed.connect(self._on_state_changed)
         self._engine.audio_levels.connect(self._on_audio_levels)
+
+    def _fire_auto_stop(self, detection_type: str, reason: str) -> None:
+        """Single entry point for firing auto-stop. Prevents duplicate signals."""
+        if self._auto_stop_fired:
+            return
+        self._auto_stop_fired = True
+        self._auto_stop_cooldown = time.time() + 30.0
+        self.log_message.emit(f"AUTO-STOP: {reason}")
+        self.auto_stop_triggered.emit(detection_type, reason)
 
     @property
     def uptime_seconds(self) -> float:
@@ -200,6 +215,7 @@ class HealthMonitor(QObject):
         _minute = _now.minute
         auto_cfg = self._config.silence.auto_stop
         if not (auto_cfg.window_start_min <= _minute <= auto_cfg.window_end_min):
+            self._subsonic_detected_time = 0.0
             return
 
         # Extract both channel samples (stereo 16-bit = 4 bytes per frame)
@@ -221,6 +237,11 @@ class HealthMonitor(QObject):
 
         # Need at least 0.3s of data to analyze
         if len(self._pcm_buffer) < 14400:
+            return
+
+        # Throttle: analyze every 4th chunk to reduce CPU
+        self._pcm_chunk_count += 1
+        if self._pcm_chunk_count % 4 != 0:
             return
 
         # Run SNR analysis on both channels
@@ -271,14 +292,11 @@ class HealthMonitor(QObject):
                 elif (now - self._subsonic_detected_time) >= tone_cfg.confirmation_s:
                     # Tone confirmed — trigger!
                     self._subsonic_triggered = True
-                    self._auto_stop_fired = True
-                    self._auto_stop_cooldown = now + 30.0
                     reason = (
                         f"Trigger tone detected ({target_freq:.0f}Hz, "
                         f"snr={snr:.1f}, mag={target_mag:.4f})"
                     )
-                    self.log_message.emit(f"AUTO-STOP: {reason}")
-                    self.auto_stop_triggered.emit("tone", reason)
+                    self._fire_auto_stop("tone", reason)
                     self._pcm_buffer.clear()
                     self._pcm_buffer_r.clear()
                     self._tone_hit_history.clear()
@@ -318,10 +336,14 @@ class HealthMonitor(QObject):
                 self._auto_stop_fired = False
                 self._subsonic_triggered = False
                 self._subsonic_detected_time = 0.0
+                self._is_tone = False
+                self._tone_start_time = 0.0
+                self._recent_levels.clear()
+                self._recent_peaks.clear()
                 self._pcm_buffer.clear()
                 self._pcm_buffer_r.clear()
                 self._tone_hit_history.clear()
-                self.log_message.emit("Auto-stop reset — ready for next silence event")
+                self.log_message.emit("Auto-stop reset — ready for next event")
 
         # Track silence state for auto-stop
         auto_stop_cfg = self._config.silence.auto_stop
@@ -424,11 +446,8 @@ class HealthMonitor(QObject):
             if (self._is_silent
                     and self._silence_start_time > 0
                     and (now - self._silence_start_time) >= auto_stop_cfg.delay_s):
-                self._auto_stop_fired = True
-                self._auto_stop_cooldown = now + 30.0  # 30s cooldown
                 reason = f"Silence detected for {auto_stop_cfg.delay_s:.0f}s"
-                self.log_message.emit(f"AUTO-STOP: {reason}")
-                self.auto_stop_triggered.emit("silence", reason)
+                self._fire_auto_stop("silence", reason)
                 return
 
             # Check tone-based auto-stop
@@ -450,14 +469,12 @@ class HealthMonitor(QObject):
                             self._is_tone = True
                             self._tone_start_time = now
                         elif (now - self._tone_start_time) >= auto_stop_cfg.delay_s:
-                            self._auto_stop_fired = True
                             reason = (
                                 f"Signal tone detected "
                                 f"(crest={avg_crest:.1f}dB, "
                                 f"level={avg_level:.1f}dB)"
                             )
-                            self.log_message.emit(f"AUTO-STOP: {reason}")
-                            self.auto_stop_triggered.emit("tone", reason)
+                            self._fire_auto_stop("tone", reason)
                             return
                     else:
                         self._is_tone = False

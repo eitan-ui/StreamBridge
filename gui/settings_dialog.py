@@ -234,15 +234,23 @@ class SettingsDialog(FramelessDialog):
         self._trigger_mairlist_check.setChecked(self._config.silence.auto_stop.trigger_mairlist)
         actions_form.addRow(self._trigger_mairlist_check)
 
-        self._stop_stream_check = QCheckBox("Stop stream after triggering")
+        self._stop_stream_check = QCheckBox("Stop stream on silence")
         self._stop_stream_check.setChecked(self._config.silence.auto_stop.stop_stream)
         self._stop_stream_check.setToolTip(
-            "OFF = Stream keeps running (recommended for playlist workflow).\n"
-            "The silence detection resets automatically when audio resumes,\n"
-            "so it will trigger again at the next news hour.\n\n"
-            "ON = Stream stops completely after silence is detected."
+            "ON = Stream stops when silence auto-stop fires.\n"
+            "OFF = Stream keeps running after silence trigger."
         )
         actions_form.addRow(self._stop_stream_check)
+
+        self._tone_stop_stream_check = QCheckBox("Stop stream on tone")
+        self._tone_stop_stream_check.setChecked(self._config.silence.auto_stop.tone_stop_stream)
+        self._tone_stop_stream_check.setToolTip(
+            "OFF (recommended) = Stream keeps running after tone trigger.\n"
+            "The tone detection resets automatically when audio resumes,\n"
+            "so it will trigger again at the next hour.\n\n"
+            "ON = Stream stops completely after tone is detected."
+        )
+        actions_form.addRow(self._tone_stop_stream_check)
 
         window_row = QHBoxLayout()
         window_row.setSpacing(6)
@@ -441,6 +449,35 @@ class SettingsDialog(FramelessDialog):
         actions_form.addRow("Target playlist:", self._ml_playlist_spin)
 
         layout.addWidget(actions_group)
+
+        # Transition control
+        trans_group = QGroupBox("Transition Control")
+        trans_form = QFormLayout(trans_group)
+        trans_form.setSpacing(SPACING_MD)
+
+        self._ml_hard_cut_check = QCheckBox("Hard cut on tone (FADEOUT=0, no crossfade)")
+        self._ml_hard_cut_check.setChecked(self._config.mairlist.action_hard_cut_on_tone)
+        self._ml_hard_cut_check.setToolTip(
+            "When tone is detected, set FADEOUT=0 on current item for an instant cut."
+        )
+        trans_form.addRow(self._ml_hard_cut_check)
+
+        self._ml_fast_fadein_check = QCheckBox("Fast cross-in for next item")
+        self._ml_fast_fadein_check.setChecked(self._config.mairlist.action_fast_fadein)
+        self._ml_fast_fadein_check.setToolTip(
+            "Set a short FADEIN on the next item for a fast transition."
+        )
+        trans_form.addRow(self._ml_fast_fadein_check)
+
+        self._ml_fadein_ms_spin = QSpinBox()
+        self._ml_fadein_ms_spin.setRange(0, 2000)
+        self._ml_fadein_ms_spin.setSingleStep(50)
+        self._ml_fadein_ms_spin.setSuffix(" ms")
+        self._ml_fadein_ms_spin.setValue(self._config.mairlist.action_fadein_ms)
+        self._ml_fadein_ms_spin.setToolTip("Cross-in duration in milliseconds (0 = instant).")
+        trans_form.addRow("Cross-in duration:", self._ml_fadein_ms_spin)
+
+        layout.addWidget(trans_group)
 
         # Custom commands (advanced)
         cmd_group = QGroupBox("Custom Commands (Advanced)")
@@ -698,6 +735,7 @@ class SettingsDialog(FramelessDialog):
         self._config.silence.auto_stop.disable_to_day = self._disable_to_day.currentData()
         self._config.silence.auto_stop.disable_to_hour = self._disable_to_hour.value()
         self._config.silence.auto_stop.stop_stream = self._stop_stream_check.isChecked()
+        self._config.silence.auto_stop.tone_stop_stream = self._tone_stop_stream_check.isChecked()
 
         self._config.silence.tone.enabled = self._tone_detect_check.isChecked()
         self._config.silence.tone.frequency_hz = float(self._tone_freq_spin.value())
@@ -728,6 +766,9 @@ class SettingsDialog(FramelessDialog):
         self._config.mairlist.action_timing_value = self._ml_timing_combo.currentData()
         self._config.mairlist.action_player = self._ml_player_combo.currentData()
         self._config.mairlist.action_playlist = self._ml_playlist_spin.value()
+        self._config.mairlist.action_hard_cut_on_tone = self._ml_hard_cut_check.isChecked()
+        self._config.mairlist.action_fast_fadein = self._ml_fast_fadein_check.isChecked()
+        self._config.mairlist.action_fadein_ms = self._ml_fadein_ms_spin.value()
 
         self._config.api.token = self._api_token_input.text().strip()
         self._config.api.allow_remote = self._allow_remote_check.isChecked()

@@ -575,8 +575,11 @@ class MainWindow(QMainWindow):
             else:
                 self._add_log(f"mAirList: skipped (minute {minute}, window {cfg.window_start_min}-{cfg.window_end_min})")
 
-        # Only stop the stream if configured to do so
-        if self._config.silence.auto_stop.stop_stream:
+        # Only stop the stream if configured to do so (separate setting per type)
+        cfg = self._config.silence.auto_stop
+        should_stop = (cfg.tone_stop_stream if detection_type == "tone"
+                       else cfg.stop_stream)
+        if should_stop:
             self._add_log("Stopping stream (stop_stream enabled)")
             self._on_stop()
         else:

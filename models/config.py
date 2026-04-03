@@ -58,6 +58,10 @@ class MairListConfig:
     action_timing_value: str = "Normal"  # Normal|Hard fixed time|Soft fixed time|Backtimed|Fixed|Excluded from backtiming
     action_player: str = "A"
     action_playlist: int = 1
+    # Transition control
+    action_hard_cut_on_tone: bool = True   # Set FADEOUT=0 on current item when tone detected
+    action_fast_fadein: bool = True        # Set short FADEIN on next item
+    action_fadein_ms: int = 100            # FADEIN duration in ms (100ms = very fast cross-in)
 
 
 @dataclass
@@ -67,7 +71,8 @@ class SilenceAutoStopConfig:
     tone_detection_enabled: bool = False  # legacy, use ToneDetectionConfig.enabled
     tone_max_crest_db: float = 6.0       # legacy, kept for JSON compat
     trigger_mairlist: bool = True
-    stop_stream: bool = True
+    stop_stream: bool = True              # Stop stream on silence auto-stop
+    tone_stop_stream: bool = False        # Stop stream on tone auto-stop (False = keep running)
     window_start_min: int = 0   # minute of hour to start allowing NEXT (0 = top of hour)
     window_end_min: int = 7     # minute of hour to stop allowing NEXT
     disable_from_day: int = 4   # 0=Mon..6=Sun, 4=Friday
