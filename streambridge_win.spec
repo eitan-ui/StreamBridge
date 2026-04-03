@@ -11,6 +11,10 @@ icon_file = 'resources/icon.ico' if os.path.exists('resources/icon.ico') else No
 datas = []
 if os.path.isdir('resources'):
     datas.append(('resources', 'resources'))
+if os.path.isdir('web'):
+    datas.append(('web', 'web'))
+if os.path.isfile('VERSION'):
+    datas.append(('VERSION', '.'))
 
 a = Analysis(
     ['main.py'],

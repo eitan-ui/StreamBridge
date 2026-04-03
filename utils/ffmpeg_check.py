@@ -27,6 +27,10 @@ def find_ffmpeg(configured_path: str = "ffmpeg") -> str | None:
         candidate = os.path.join(exe_dir, name)
         if os.path.isfile(candidate):
             return candidate
+        # Also check ffmpeg/ subdirectory (portable layout)
+        candidate = os.path.join(exe_dir, "ffmpeg", name)
+        if os.path.isfile(candidate):
+            return candidate
 
     # Check app bundle dir (macOS)
     if getattr(sys, 'frozen', False):

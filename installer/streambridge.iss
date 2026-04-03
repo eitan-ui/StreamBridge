@@ -3,14 +3,16 @@
 ;  Creates a professional Windows installer with:
 ;   - FFmpeg bundled
 ;   - Start Menu & Desktop shortcuts
-;   - Uninstaller
+;   - Uninstaller with config cleanup
 ;   - Auto-start option
 ; ============================================================
 
 #define MyAppName "StreamBridge"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "StreamBridge"
-#define MyAppURL "https://github.com/yourusername/streambridge"
+#define MyAppURL "https://github.com/eitan-ui/StreamBridge"
 #define MyAppExeName "StreamBridge.exe"
 
 [Setup]
@@ -35,7 +37,6 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-LicenseFile=
 MinVersion=10.0
 
 [Languages]
@@ -47,17 +48,20 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Start StreamBridge with Windows"; GroupDescription: "Other:"
 
 [Files]
-; Main application
+; Main application (web/ and resources/ are embedded inside the EXE by PyInstaller)
 Source: "..\dist\StreamBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; FFmpeg (bundled)
 Source: "..\dist\ffmpeg\ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ffmpeg\ffprobe.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
-; Resources
+; Resources (icon for shortcuts, fonts for fallback)
 Source: "..\resources\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\resources\icon.png"; DestDir: "{app}\resources"; Flags: ignoreversion
 Source: "..\resources\fonts\*"; DestDir: "{app}\resources\fonts"; Flags: ignoreversion recursesubdirs
+
+; User documentation
+Source: "..\README_USER.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion isreadme skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
@@ -91,5 +95,23 @@ begin
     end
     else
       Result := False;
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ConfigDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    ConfigDir := ExpandConstant('{userappdata}\StreamBridge');
+    if DirExists(ConfigDir) then
+    begin
+      if MsgBox('Remove StreamBridge settings and configuration data?',
+                mbConfirmation, MB_YESNO) = IDYES then
+      begin
+        DelTree(ConfigDir, True, True, True);
+      end;
+    end;
   end;
 end;

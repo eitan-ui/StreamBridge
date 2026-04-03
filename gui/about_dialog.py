@@ -14,8 +14,11 @@ from gui.frameless import FramelessDialog
 from utils.license import get_licensed_username, check_for_update
 
 
+from __init__ import VERSION as _APP_VERSION
+
+
 class AboutDialog(FramelessDialog):
-    VERSION = "1.0.0"
+    VERSION = _APP_VERSION
 
     def __init__(self, ffmpeg_path: str = "ffmpeg", parent=None) -> None:
         super().__init__(parent, title="About StreamBridge")

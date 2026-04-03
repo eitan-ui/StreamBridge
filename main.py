@@ -15,8 +15,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QAction
 from PyQt6.QtCore import Qt
 from qasync import QEventLoop
 
-VERSION = "1.0.0"
-APP_NAME = "StreamBridge"
+from __init__ import VERSION, APP_NAME
 from models.config import Config
 from models.source import SourceManager
 from utils.logger import setup_file_logger
