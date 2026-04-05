@@ -62,7 +62,8 @@ class AboutDialog(FramelessDialog):
         # Licensed user
         username = get_licensed_username()
         if username:
-            user_label = QLabel(f"Licensed to: {username}")
+            label_text = f"Registered: {username}" if "@" in username else f"Licensed to: {username}"
+            user_label = QLabel(label_text)
             user_label.setStyleSheet(
                 f"font-size: {FONT_SM + 1}px; color: {SUCCESS}; font-weight: 600;"
             )
