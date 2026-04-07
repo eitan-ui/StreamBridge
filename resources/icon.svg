@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Circular background (matching current icon shape) -->
+  <circle cx="256" cy="256" r="256" fill="#0b1d3a"/>
+  <!-- Subtle border ring -->
+  <circle cx="256" cy="256" r="248" fill="none" stroke="#1e3a5f" stroke-width="3" opacity="0.5"/>
+
+  <!-- Head silhouette -->
+  <ellipse cx="256" cy="225" rx="82" ry="95" fill="#152240" stroke="#1e3a5f" stroke-width="2"/>
+
+  <!-- Hair on top (messy/spiky strands) -->
+  <path d="M185 185 Q195 110 220 130 Q225 95 250 115 Q255 85 270 110 Q280 90 290 120 Q305 100 310 135 Q325 115 330 185"
+        fill="#1a2d4d" stroke="#243d66" stroke-width="1.5"/>
+
+  <!-- Inner hair volume -->
+  <path d="M195 180 Q205 125 225 140 Q235 108 255 125 Q265 100 280 128 Q295 110 305 140 Q320 125 322 180"
+        fill="#1e3555"/>
+
+  <!-- Neck -->
+  <rect x="235" y="315" width="42" height="28" rx="8" fill="#152240"/>
+
+  <!-- Headband (over the hair) -->
+  <path d="M168 200 Q170 135 256 120 Q342 135 344 200"
+        fill="none" stroke="#22C55E" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+
+  <!-- Left ear cup -->
+  <rect x="148" y="185" width="38" height="55" rx="12" fill="#1a3050" stroke="#22C55E" stroke-width="2.5"/>
+  <rect x="152" y="192" width="12" height="40" rx="4" fill="#22C55E" opacity="0.15"/>
+
+  <!-- Right ear cup -->
+  <rect x="326" y="185" width="38" height="55" rx="12" fill="#1a3050" stroke="#22C55E" stroke-width="2.5"/>
+  <rect x="348" y="192" width="12" height="40" rx="4" fill="#22C55E" opacity="0.15"/>
+
+  <!-- Sound wave between headphones -->
+  <g transform="translate(256, 212)" opacity="0.9">
+    <path d="M-55 0 Q-45 -18 -35 0 Q-25 18 -15 0 Q-5 -22 5 0 Q15 22 25 0 Q35 -18 45 0 Q55 18 65 0"
+          fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" transform="translate(-5,0)"/>
+    <path d="M-55 0 Q-45 -18 -35 0 Q-25 18 -15 0 Q-5 -22 5 0 Q15 22 25 0 Q35 -18 45 0 Q55 18 65 0"
+          fill="none" stroke="#22C55E" stroke-width="6" stroke-linecap="round" opacity="0.15" transform="translate(-5,0)"/>
+  </g>
+
+  <!-- Eyes (subtle, minimal) -->
+  <circle cx="232" cy="235" r="4" fill="#3b6b8a" opacity="0.5"/>
+  <circle cx="280" cy="235" r="4" fill="#3b6b8a" opacity="0.5"/>
+
+  <!-- Text — street/graffiti style -->
+  <text x="256" y="370" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="58" fill="#FAFAFA" letter-spacing="2" font-style="italic" stroke="#22C55E" stroke-width="1.5" paint-order="stroke">STREAM</text>
+  <text x="256" y="418" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="48" fill="#22C55E" letter-spacing="4" font-style="italic" stroke="#0a1020" stroke-width="3" paint-order="stroke">BRIDGE</text>
+</svg>
