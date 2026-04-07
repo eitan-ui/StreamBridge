@@ -325,6 +325,13 @@ class ApiServer:
         if ip not in self._auth_failures:
             self._auth_failures[ip] = collections.deque()
         self._auth_failures[ip].append(time.time())
+        # Prune stale IPs to prevent unbounded memory growth
+        if len(self._auth_failures) > 1000:
+            cutoff = time.time() - 60
+            self._auth_failures = {
+                k: v for k, v in self._auth_failures.items()
+                if v and v[-1] > cutoff
+            }
 
     @web.middleware
     async def _auth_middleware(self, request: web.Request,
@@ -411,6 +418,16 @@ class ApiServer:
             return web.json_response(
                 {"error": "Provide url or device"}, status=400
             )
+
+        # Validate URL scheme to prevent SSRF (file://, etc.)
+        if url:
+            allowed_schemes = ("http://", "https://", "rtsp://", "rtmp://", "rtp://")
+            if not any(url.lower().startswith(s) for s in allowed_schemes):
+                return web.json_response(
+                    {"error": "Invalid URL scheme. Allowed: http, https, rtsp, rtmp, rtp"},
+                    status=400,
+                )
+
         self.on_start_stream(url, device)
         return web.json_response({"status": "starting"})
 

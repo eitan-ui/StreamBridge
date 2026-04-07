@@ -32,10 +32,10 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Check if deactivated
+    // Rate limiting: max 5 code requests per email per 15 minutes
     const { data: existing } = await supabase
       .from("licenses")
-      .select("active")
+      .select("active, code_expires_at, code_request_count, code_request_window")
       .eq("email", cleanEmail)
       .maybeSingle();
 
@@ -46,15 +46,41 @@ serve(async (req) => {
       );
     }
 
-    // Generate random 12-char code: XXXX-XXXX-XXXX
+    // Check rate limit
+    if (existing) {
+      const now = Date.now();
+      const windowStart = existing.code_request_window ? new Date(existing.code_request_window).getTime() : 0;
+      const windowMs = 15 * 60 * 1000; // 15 minutes
+      const count = existing.code_request_count || 0;
+
+      if (now - windowStart < windowMs && count >= 5) {
+        const retryAfter = Math.ceil((windowMs - (now - windowStart)) / 1000);
+        return new Response(
+          JSON.stringify({ success: false, error: `Too many requests. Try again in ${Math.ceil(retryAfter / 60)} minutes.` }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Generate random 12-char code using crypto-secure PRNG: XXXX-XXXX-XXXX
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const randomValues = new Uint32Array(12);
+    crypto.getRandomValues(randomValues);
     let code = "";
     for (let i = 0; i < 12; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
+      code += chars[randomValues[i] % chars.length];
     }
     const formattedCode = `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}`;
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Rate limit tracking: reset window if expired, increment counter
+    const now = new Date();
+    const windowMs = 15 * 60 * 1000;
+    const currentWindow = existing?.code_request_window ? new Date(existing.code_request_window).getTime() : 0;
+    const windowExpired = (now.getTime() - currentWindow) >= windowMs;
+    const newCount = windowExpired ? 1 : (existing?.code_request_count || 0) + 1;
+    const newWindow = windowExpired ? now.toISOString() : (existing?.code_request_window || now.toISOString());
 
     // Upsert into licenses
     const { error: dbError } = await supabase
@@ -66,6 +92,8 @@ serve(async (req) => {
           activation_code: formattedCode,
           code_expires_at: expiresAt,
           code_verified: false,
+          code_request_count: newCount,
+          code_request_window: newWindow,
         },
         { onConflict: "email" }
       );

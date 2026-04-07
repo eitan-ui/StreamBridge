@@ -55,8 +55,31 @@ serve(async (req) => {
       );
     }
 
+    // Rate limiting: max 10 failed attempts per email, then lock for 15 minutes
+    const failedAttempts = license.failed_verify_count || 0;
+    const lastFailedAt = license.last_failed_verify ? new Date(license.last_failed_verify).getTime() : 0;
+    const lockoutMs = 15 * 60 * 1000;
+
+    if (failedAttempts >= 10 && (Date.now() - lastFailedAt) < lockoutMs) {
+      const retryAfter = Math.ceil((lockoutMs - (Date.now() - lastFailedAt)) / 1000 / 60);
+      return new Response(
+        JSON.stringify({ success: false, error: `Too many failed attempts. Try again in ${retryAfter} minutes.` }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Check code matches
     if (license.activation_code !== cleanCode) {
+      // Record failed attempt
+      const newCount = (Date.now() - lastFailedAt) >= lockoutMs ? 1 : failedAttempts + 1;
+      await supabase
+        .from("licenses")
+        .update({
+          failed_verify_count: newCount,
+          last_failed_verify: new Date().toISOString(),
+        })
+        .eq("email", cleanEmail);
+
       return new Response(
         JSON.stringify({ success: false, error: "Invalid activation code. Check your email and try again." }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -74,7 +97,7 @@ serve(async (req) => {
       }
     }
 
-    // Activate: update machine_id and mark verified
+    // Activate: update machine_id, mark verified, reset failed attempts
     const { error: updateError } = await supabase
       .from("licenses")
       .update({
@@ -82,6 +105,8 @@ serve(async (req) => {
         machine_name: machine_name || null,
         code_verified: true,
         last_seen: new Date().toISOString(),
+        failed_verify_count: 0,
+        last_failed_verify: null,
       })
       .eq("email", cleanEmail);
 

@@ -557,23 +557,26 @@ class MainWindow(QMainWindow):
         """Handle auto-stop triggered by silence or tone detection."""
         self._add_log(f"{detection_type.upper()} DETECTED: {reason}")
 
-        # Send mAirList commands when streaming, within time window, not in disabled period
+        # Send mAirList commands only when clients are connected
         if self._config.silence.auto_stop.trigger_mairlist and self._is_streaming:
-            from datetime import datetime
-            now = datetime.now()
-            minute = now.minute
-            cfg = self._config.silence.auto_stop
-
-            # Check disabled period (e.g., Friday 14:00 to Saturday 17:00)
-            in_disabled = self._is_in_disabled_period(now, cfg)
-            if in_disabled:
-                self._add_log(f"mAirList: skipped (disabled period)")
-            elif cfg.window_start_min <= minute <= cfg.window_end_min:
-                actions = self._mairlist_api.execute_auto_stop_actions(detection_type)
-                for desc in actions:
-                    self._add_log(f"mAirList: {desc}")
+            if self._relay.client_count == 0:
+                self._add_log("mAirList: skipped (no clients connected)")
             else:
-                self._add_log(f"mAirList: skipped (minute {minute}, window {cfg.window_start_min}-{cfg.window_end_min})")
+                from datetime import datetime
+                now = datetime.now()
+                minute = now.minute
+                cfg = self._config.silence.auto_stop
+
+                # Check disabled period (e.g., Friday 14:00 to Saturday 17:00)
+                in_disabled = self._is_in_disabled_period(now, cfg)
+                if in_disabled:
+                    self._add_log(f"mAirList: skipped (disabled period)")
+                elif cfg.window_start_min <= minute <= cfg.window_end_min:
+                    actions = self._mairlist_api.execute_auto_stop_actions(detection_type)
+                    for desc in actions:
+                        self._add_log(f"mAirList: {desc}")
+                else:
+                    self._add_log(f"mAirList: skipped (minute {minute}, window {cfg.window_start_min}-{cfg.window_end_min})")
 
         # Only stop the stream if configured to do so (separate setting per type)
         cfg = self._config.silence.auto_stop

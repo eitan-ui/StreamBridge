@@ -168,6 +168,7 @@ class HttpRelay(QObject):
 
         # --- API app (main port) ---
         self._api_app = web.Application()
+        self._api_app.middlewares.append(self._security_headers_middleware)
         self._api_app.router.add_get("/status", self._handle_status)
 
         if self._api_server:
@@ -252,6 +253,24 @@ class HttpRelay(QObject):
 
         self._pcm_buffer.clear()
         self.log_message.emit("Servers stopped")
+
+    # -----------------------------------------------------------------
+    #  Security headers middleware
+    # -----------------------------------------------------------------
+
+    @web.middleware
+    async def _security_headers_middleware(self, request: web.Request,
+                                          handler) -> web.StreamResponse:
+        response = await handler(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "connect-src 'self' ws: wss:; font-src 'self'"
+        )
+        return response
 
     # -----------------------------------------------------------------
     #  Distributor thread — reads PCM buffer, broadcasts to clients

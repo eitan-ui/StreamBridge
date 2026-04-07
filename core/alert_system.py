@@ -66,6 +66,9 @@ class AlertSystem(QObject):
                 f"&Body={encoded_msg}"
             )
         elif wc.service == "custom":
+            if not wc.custom_url.lower().startswith("https://"):
+                self.log_message.emit("Custom WhatsApp URL must use https://")
+                return
             url = wc.custom_url.replace("{MESSAGE}", encoded_msg)
         else:
             self.log_message.emit(f"Unknown WhatsApp service: {wc.service}")
