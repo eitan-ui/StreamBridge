@@ -39,9 +39,21 @@ class WhatsAppConfig:
 
 
 @dataclass
+class TelegramConfig:
+    enabled: bool = False
+    bot_token: str = ""   # from @BotFather
+    chat_id: str = ""     # user/group chat ID
+    # Event filters — which events trigger a Telegram alert
+    notify_on_silence: bool = False
+    notify_on_disconnect: bool = True
+    notify_on_auto_stop: bool = False
+
+
+@dataclass
 class AlertConfig:
     sound_enabled: bool = True
     whatsapp: WhatsAppConfig = field(default_factory=WhatsAppConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
 
 @dataclass
@@ -282,7 +294,14 @@ class Config:
                 reconnect=ReconnectConfig(**data.get("reconnect", {})),
                 alerts=AlertConfig(
                     sound_enabled=data.get("alerts", {}).get("sound_enabled", True),
-                    whatsapp=WhatsAppConfig(**data.get("alerts", {}).get("whatsapp", {})),
+                    whatsapp=WhatsAppConfig(**{
+                        k: v for k, v in data.get("alerts", {}).get("whatsapp", {}).items()
+                        if k in WhatsAppConfig.__dataclass_fields__
+                    }),
+                    telegram=TelegramConfig(**{
+                        k: v for k, v in data.get("alerts", {}).get("telegram", {}).items()
+                        if k in TelegramConfig.__dataclass_fields__
+                    }),
                 ),
                 mairlist=MairListConfig(**{
                     k: v for k, v in data.get("mairlist", {}).items()

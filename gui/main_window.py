@@ -592,7 +592,8 @@ class MainWindow(QMainWindow):
         source = self._health_monitor._last_url or self._health_monitor._last_device
         self._alert_system.trigger_all(
             f"StreamBridge: {reason} on {source}. "
-            f"mAirList command sent ({detection_type})."
+            f"mAirList command sent ({detection_type}).",
+            event_type="auto_stop",
         )
 
     # --- Silence handlers ---

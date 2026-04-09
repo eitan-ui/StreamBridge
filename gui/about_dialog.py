@@ -132,9 +132,9 @@ class AboutDialog(FramelessDialog):
                 parent=self,
             )
             if dlg.exec():
-                # Installer launched — close app
-                import sys as _sys
-                _sys.exit(0)
+                # Installer launched silently — kill process so files can be replaced
+                import os as _os
+                _os._exit(0)
         else:
             self._update_label.setText("You're up to date!")
             self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")

@@ -71,27 +71,52 @@ def update_version_file(version: str) -> None:
 
 
 def build_exe() -> None:
-    log("Building exe with PyInstaller...")
-    dist_exe = os.path.join(PROJECT_DIR, "dist", "StreamBridge.exe")
-    if os.path.exists(dist_exe):
+    log("Building app with PyInstaller (onedir mode)...")
+    dist_dir = os.path.join(PROJECT_DIR, "dist", "StreamBridge")
+    # Clean old onedir output if present (ignore errors — files may be locked)
+    if os.path.isdir(dist_dir):
         try:
-            os.remove(dist_exe)
-        except PermissionError:
-            # In use, rename instead
-            backup = dist_exe + ".old"
-            if os.path.exists(backup):
-                os.remove(backup)
-            os.rename(dist_exe, backup)
+            shutil.rmtree(dist_dir)
+        except (PermissionError, OSError):
+            pass
 
     venv_python = os.path.join(PROJECT_DIR, "venv", "Scripts", "python.exe")
     python = venv_python if os.path.exists(venv_python) else sys.executable
     run([python, "-m", "PyInstaller", "streambridge_win.spec", "--noconfirm"])
 
-    # Update portable folder
-    portable_exe = os.path.join(PROJECT_DIR, "dist", "StreamBridge-Portable", "StreamBridge.exe")
-    if os.path.isdir(os.path.dirname(portable_exe)):
-        shutil.copy2(dist_exe, portable_exe)
-        log("Copied exe to StreamBridge-Portable/")
+    # Update portable folder: copy the whole onedir output
+    # Preserve ffmpeg binaries (loose files) and any ffmpeg/ subfolder
+    portable_dir = os.path.join(PROJECT_DIR, "dist", "StreamBridge-Portable")
+    ffmpeg_files = {"ffmpeg.exe", "ffprobe.exe", "ffmpeg"}
+    if os.path.isdir(portable_dir):
+        for name in os.listdir(portable_dir):
+            if name.lower() in ffmpeg_files:
+                continue
+            full = os.path.join(portable_dir, name)
+            try:
+                if os.path.isdir(full):
+                    shutil.rmtree(full)
+                else:
+                    os.remove(full)
+            except (PermissionError, OSError):
+                pass
+        # Copy new onedir into portable folder
+        for name in os.listdir(dist_dir):
+            src = os.path.join(dist_dir, name)
+            dst = os.path.join(portable_dir, name)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+        # Ensure ffmpeg binaries are present (copy from dist/ffmpeg/ if missing)
+        ffmpeg_src_dir = os.path.join(PROJECT_DIR, "dist", "ffmpeg")
+        if os.path.isdir(ffmpeg_src_dir):
+            for bin_name in ("ffmpeg.exe", "ffprobe.exe"):
+                src = os.path.join(ffmpeg_src_dir, bin_name)
+                dst = os.path.join(portable_dir, bin_name)
+                if os.path.isfile(src) and not os.path.isfile(dst):
+                    shutil.copy2(src, dst)
+        log("Updated StreamBridge-Portable/ with onedir output")
 
 
 def build_installer(version: str) -> str:

@@ -484,6 +484,12 @@ class ApiServer:
                 for key in ("enabled", "service", "phone", "api_key", "custom_url"):
                     if key in a["whatsapp"]:
                         setattr(cfg.alerts.whatsapp, key, a["whatsapp"][key])
+            if "telegram" in a:
+                for key in ("enabled", "bot_token", "chat_id",
+                            "notify_on_silence", "notify_on_disconnect",
+                            "notify_on_auto_stop"):
+                    if key in a["telegram"]:
+                        setattr(cfg.alerts.telegram, key, a["telegram"][key])
 
         if "mairlist" in updates:
             for key in ("enabled", "api_url", "command",

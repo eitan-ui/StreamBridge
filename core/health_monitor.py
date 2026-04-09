@@ -401,7 +401,8 @@ class HealthMonitor(QObject):
             source = self._last_url or self._last_device
             self._alert_system.trigger_all(
                 f"StreamBridge ALERT: Silence detected on {source} "
-                f"for {int(silence_duration)} seconds"
+                f"for {int(silence_duration)} seconds",
+                event_type="silence",
             )
 
         # Failover check
@@ -492,7 +493,8 @@ class HealthMonitor(QObject):
             source = self._last_url or self._last_device
             self._alert_system.trigger_all(
                 f"StreamBridge ALERT: Lost connection to {source}. "
-                f"Reconnection failed after {self._reconnect_count} attempts."
+                f"Reconnection failed after {self._reconnect_count} attempts.",
+                event_type="disconnect",
             )
             return
 

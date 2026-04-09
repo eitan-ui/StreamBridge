@@ -17,8 +17,8 @@ from PyQt6.QtWidgets import (
 
 from gui.frameless import FramelessDialog
 from gui.theme import (
-    FONT_LG, FONT_MD, FONT_SM, SPACING_MD,
-    TEXT_PRIMARY, TEXT_SECONDARY, ACCENT, SUCCESS, WARNING, ERROR,
+    FONT_LG, FONT_SM, SPACING_MD,
+    TEXT_PRIMARY, TEXT_SECONDARY, ACCENT, SUCCESS, ERROR,
 )
 
 
@@ -153,14 +153,26 @@ class UpdateDialog(FramelessDialog):
 
     def _on_finished(self, path: str) -> None:
         self._local_path = path
-        self._status.setText("Download complete. Launching installer...")
+        self._status.setText("Update ready. Installing silently and restarting...")
         self._status.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
         self._progress.setValue(100)
 
-        # Launch installer and exit the app
+        # Launch installer in silent mode — it will kill the running app,
+        # replace files, and auto-start the new version. We exit immediately
+        # so the installer can safely overwrite our exe and DLL files.
         try:
             if sys.platform == "win32":
-                os.startfile(path)  # noqa: S606
+                # /VERYSILENT: no UI, no progress
+                # /SUPPRESSMSGBOXES: auto-answer prompts
+                # /NORESTART: don't reboot Windows
+                # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: fully detach
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                subprocess.Popen(
+                    [path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True,
+                )
             else:
                 subprocess.Popen(["open", path])
         except Exception as e:
@@ -170,7 +182,8 @@ class UpdateDialog(FramelessDialog):
             self._later_btn.setEnabled(True)
             return
 
-        # Accept dialog; main.py should quit the app after this
+        # Accept dialog — main.py will os._exit(0) which kills Python
+        # cleanly so PyInstaller's _MEI temp folder isn't locked anymore
         self.accept()
 
     def _on_failed(self, err: str) -> None:

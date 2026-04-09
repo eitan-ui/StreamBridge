@@ -141,10 +141,11 @@ def main() -> None:
                 release_notes=update.get("release_notes", ""),
             )
             if dialog.exec():
-                # User clicked Download & Install — installer launched, quit app
+                # User clicked Download & Install — installer launched in silent mode,
+                # quit immediately so it can replace our files and auto-restart us
                 logger.info("Update installer launched, exiting")
                 _release_lock()
-                sys.exit(0)
+                os._exit(0)
     except Exception as e:
         logger.warning(f"Update check failed: {e}")
 

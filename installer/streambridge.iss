@@ -48,17 +48,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Start StreamBridge with Windows"; GroupDescription: "Other:"
 
 [Files]
-; Main application (web/ and resources/ are embedded inside the EXE by PyInstaller)
-Source: "..\dist\StreamBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Main application — onedir build (exe + all Python DLLs + dependencies)
+Source: "..\dist\StreamBridge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; FFmpeg (bundled)
 Source: "..\dist\ffmpeg\ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ffmpeg\ffprobe.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
-; Resources (icon for shortcuts, fonts for fallback)
+; Icon for shortcuts (separate copy so it's accessible even if _internal moves)
 Source: "..\resources\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\resources\icon.png"; DestDir: "{app}\resources"; Flags: ignoreversion
-Source: "..\resources\fonts\*"; DestDir: "{app}\resources\fonts"; Flags: ignoreversion recursesubdirs
 
 ; User documentation
 Source: "..\README_USER.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion isreadme skipifsourcedoesntexist
@@ -73,7 +71,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "StreamBridge"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
+; Launch after interactive install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Auto-launch after silent install (auto-update path)
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser skipifnotsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"
@@ -84,18 +85,9 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  // Check for running instance
-  if CheckForMutexes('StreamBridgeMutex') then
-  begin
-    if MsgBox('StreamBridge is currently running. Close it before installing?',
-              mbConfirmation, MB_YESNO) = IDYES then
-    begin
-      Exec('taskkill', '/f /im StreamBridge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Sleep(1000);
-    end
-    else
-      Result := False;
-  end;
+  // Always kill any running instance (both silent and interactive modes)
+  Exec('taskkill', '/f /im StreamBridge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1500);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

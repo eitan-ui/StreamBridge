@@ -371,9 +371,113 @@ class SettingsDialog(FramelessDialog):
         wa_layout.addRow("Custom URL:", self._wa_custom_url_input)
 
         layout.addWidget(wa_group)
+
+        # Telegram section
+        tg_group = QGroupBox("Telegram Notifications")
+        tg_layout = QFormLayout(tg_group)
+        tg_layout.setSpacing(SPACING_MD)
+
+        tg = self._config.alerts.telegram
+
+        self._tg_enabled_check = QCheckBox("Enable Telegram alerts")
+        self._tg_enabled_check.setChecked(tg.enabled)
+        tg_layout.addRow(self._tg_enabled_check)
+
+        self._tg_bot_token_input = QLineEdit(tg.bot_token)
+        self._tg_bot_token_input.setPlaceholderText("123456:ABC-DEF...")
+        self._tg_bot_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        tg_layout.addRow("Bot Token:", self._tg_bot_token_input)
+
+        self._tg_chat_id_input = QLineEdit(tg.chat_id)
+        self._tg_chat_id_input.setPlaceholderText("Your chat ID or @channelname")
+        tg_layout.addRow("Chat ID:", self._tg_chat_id_input)
+
+        tg_help = QLabel(
+            "1. Chat with @BotFather on Telegram to create a bot\n"
+            "2. Chat with @userinfobot to get your chat ID\n"
+            "3. Send /start to your bot so it can message you"
+        )
+        tg_help.setStyleSheet("color: #8a9bae; font-size: 11px;")
+        tg_help.setWordWrap(True)
+        tg_layout.addRow(tg_help)
+
+        # Event filters
+        tg_filters_label = QLabel("Notify on:")
+        tg_filters_label.setStyleSheet("font-weight: 600; margin-top: 6px;")
+        tg_layout.addRow(tg_filters_label)
+
+        self._tg_notify_silence_check = QCheckBox("Prolonged silence")
+        self._tg_notify_silence_check.setChecked(tg.notify_on_silence)
+        tg_layout.addRow(self._tg_notify_silence_check)
+
+        self._tg_notify_disconnect_check = QCheckBox("Stream disconnect (reconnect failed)")
+        self._tg_notify_disconnect_check.setChecked(tg.notify_on_disconnect)
+        tg_layout.addRow(self._tg_notify_disconnect_check)
+
+        self._tg_notify_auto_stop_check = QCheckBox("Auto-stop triggered (silence/tone)")
+        self._tg_notify_auto_stop_check.setChecked(tg.notify_on_auto_stop)
+        tg_layout.addRow(self._tg_notify_auto_stop_check)
+
+        # Test button
+        self._tg_test_btn = QPushButton("Send test message")
+        self._tg_test_btn.clicked.connect(self._on_test_telegram)
+        tg_layout.addRow(self._tg_test_btn)
+
+        self._tg_test_status = QLabel("")
+        self._tg_test_status.setStyleSheet("font-size: 11px;")
+        self._tg_test_status.setWordWrap(True)
+        tg_layout.addRow(self._tg_test_status)
+
+        layout.addWidget(tg_group)
         layout.addStretch()
 
         return tab
+
+    def _on_test_telegram(self) -> None:
+        """Send a Telegram test message using the current form values."""
+        import threading
+        import json as _json
+        import urllib.request as _ur
+
+        token = self._tg_bot_token_input.text().strip()
+        chat_id = self._tg_chat_id_input.text().strip()
+        if not token or not chat_id:
+            self._tg_test_status.setText("Enter bot token and chat ID first")
+            self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+            return
+
+        self._tg_test_status.setText("Sending...")
+        self._tg_test_status.setStyleSheet("color: #8a9bae; font-size: 11px;")
+        self._tg_test_btn.setEnabled(False)
+
+        def _worker():
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                body = _json.dumps({
+                    "chat_id": chat_id,
+                    "text": "StreamBridge: test message \u2713",
+                }).encode("utf-8")
+                req = _ur.Request(
+                    url, data=body, method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with _ur.urlopen(req, timeout=15) as resp:
+                    ok = (resp.status == 200)
+                    self._tg_test_status.setText(
+                        "Test message sent!" if ok
+                        else f"Failed: HTTP {resp.status}"
+                    )
+                    self._tg_test_status.setStyleSheet(
+                        "color: #2ecc71; font-size: 11px;" if ok
+                        else "color: #e74c3c; font-size: 11px;"
+                    )
+            except Exception as e:
+                self._tg_test_status.setText(f"Failed: {e}")
+                self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+            finally:
+                self._tg_test_btn.setEnabled(True)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _create_mairlist_tab(self) -> QWidget:
         tab = QWidget()
@@ -754,6 +858,14 @@ class SettingsDialog(FramelessDialog):
         self._config.alerts.whatsapp.phone = self._wa_phone_input.text().strip()
         self._config.alerts.whatsapp.api_key = self._wa_key_input.text().strip()
         self._config.alerts.whatsapp.custom_url = self._wa_custom_url_input.text().strip()
+
+        tg = self._config.alerts.telegram
+        tg.enabled = self._tg_enabled_check.isChecked()
+        tg.bot_token = self._tg_bot_token_input.text().strip()
+        tg.chat_id = self._tg_chat_id_input.text().strip()
+        tg.notify_on_silence = self._tg_notify_silence_check.isChecked()
+        tg.notify_on_disconnect = self._tg_notify_disconnect_check.isChecked()
+        tg.notify_on_auto_stop = self._tg_notify_auto_stop_check.isChecked()
 
         self._config.mairlist.enabled = self._ml_enabled_check.isChecked()
         self._config.mairlist.api_url = self._ml_api_url_input.text().strip() or "http://localhost:9000"
