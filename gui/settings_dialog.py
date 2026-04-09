@@ -389,13 +389,16 @@ class SettingsDialog(FramelessDialog):
         tg_layout.addRow("Bot Token:", self._tg_bot_token_input)
 
         self._tg_chat_id_input = QLineEdit(tg.chat_id)
-        self._tg_chat_id_input.setPlaceholderText("Your chat ID or @channelname")
+        self._tg_chat_id_input.setPlaceholderText("e.g. 123456789 (your numeric ID, NOT the bot username)")
         tg_layout.addRow("Chat ID:", self._tg_chat_id_input)
 
         tg_help = QLabel(
-            "1. Chat with @BotFather on Telegram to create a bot\n"
-            "2. Chat with @userinfobot to get your chat ID\n"
-            "3. Send /start to your bot so it can message you"
+            "Setup steps:\n"
+            "1. Chat with @BotFather on Telegram and type /newbot to create a bot.\n"
+            "2. Copy the bot token (looks like 123456:ABC-DEF...) and paste it above.\n"
+            "3. Open a chat with your new bot and send /start (required!).\n"
+            "4. Chat with @userinfobot and copy YOUR numeric ID (e.g. 123456789).\n"
+            "   That number is your Chat ID — not the bot's @username."
         )
         tg_help.setStyleSheet("color: #8a9bae; font-size: 11px;")
         tg_help.setWordWrap(True)

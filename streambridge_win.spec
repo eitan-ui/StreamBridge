@@ -22,6 +22,7 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
+        'truststore',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',

@@ -3,3 +3,4 @@ aiohttp>=3.9
 qasync>=0.27
 asyncssh>=2.14
 PyAudioWPatch>=0.2.12
+truststore>=0.9

@@ -7,6 +7,14 @@ try:
 except ImportError:
     fcntl = None  # Windows
 
+# Use Windows/macOS native cert store for HTTPS — fixes corporate proxy,
+# antivirus TLS inspection, and other "self-signed cert in chain" errors
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass  # Fallback to default OpenSSL CA bundle
+
 # Ensure the streambridge package directory is in the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
