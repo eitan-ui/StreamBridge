@@ -441,6 +441,7 @@ class SettingsDialog(FramelessDialog):
         import threading
         import json as _json
         import urllib.request as _ur
+        import urllib.error as _uer
 
         token = self._tg_bot_token_input.text().strip()
         chat_id = self._tg_chat_id_input.text().strip()
@@ -449,9 +450,38 @@ class SettingsDialog(FramelessDialog):
             self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
             return
 
+        # Validate chat_id looks reasonable (numeric, @channel, or -100... group ID)
+        if chat_id.startswith("@") and chat_id.endswith("_bot"):
+            self._tg_test_status.setText(
+                "Chat ID looks like a bot username. You need YOUR chat ID "
+                "(numeric, e.g. 123456789). Get it from @userinfobot."
+            )
+            self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+            return
+
         self._tg_test_status.setText("Sending...")
         self._tg_test_status.setStyleSheet("color: #8a9bae; font-size: 11px;")
         self._tg_test_btn.setEnabled(False)
+
+        def _describe_error(code: int, tg_desc: str) -> str:
+            """Translate Telegram API errors into actionable hints."""
+            d = (tg_desc or "").lower()
+            if "chat not found" in d:
+                return (
+                    "Chat not found. Open @YourBotName in Telegram and send "
+                    "/start to it first, then try again. Also verify Chat ID "
+                    "is YOUR numeric user ID (from @userinfobot)."
+                )
+            if "unauthorized" in d or code == 401:
+                return "Invalid bot token. Check it with @BotFather."
+            if "not found" in d or code == 404:
+                return (
+                    "Bot token not recognized by Telegram (404). "
+                    "Double-check the token from @BotFather."
+                )
+            if "blocked" in d:
+                return "The user has blocked the bot."
+            return f"Telegram error: {tg_desc or f'HTTP {code}'}"
 
         def _worker():
             try:
@@ -464,15 +494,24 @@ class SettingsDialog(FramelessDialog):
                     url, data=body, method="POST",
                     headers={"Content-Type": "application/json"},
                 )
-                with _ur.urlopen(req, timeout=15) as resp:
-                    ok = (resp.status == 200)
+                try:
+                    with _ur.urlopen(req, timeout=15) as resp:
+                        self._tg_test_status.setText("Test message sent!")
+                        self._tg_test_status.setStyleSheet(
+                            "color: #2ecc71; font-size: 11px;"
+                        )
+                except _uer.HTTPError as http_err:
+                    tg_desc = ""
+                    try:
+                        err_body = _json.loads(http_err.read().decode())
+                        tg_desc = err_body.get("description", "")
+                    except Exception:
+                        pass
                     self._tg_test_status.setText(
-                        "Test message sent!" if ok
-                        else f"Failed: HTTP {resp.status}"
+                        _describe_error(http_err.code, tg_desc)
                     )
                     self._tg_test_status.setStyleSheet(
-                        "color: #2ecc71; font-size: 11px;" if ok
-                        else "color: #e74c3c; font-size: 11px;"
+                        "color: #e74c3c; font-size: 11px;"
                     )
             except Exception as e:
                 self._tg_test_status.setText(f"Failed: {e}")
