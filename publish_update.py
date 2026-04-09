@@ -126,13 +126,12 @@ def build_portable_zip(version: str) -> str:
     return zip_file
 
 
-def create_github_release(version: str, setup_file: str, zip_file: str,
-                          notes: str) -> str:
-    """Create a GitHub release and upload assets. Returns download URL for setup."""
+def upload_release(version: str, setup_file: str, zip_file: str,
+                   notes: str) -> str:
+    """Create GitHub Release and upload assets. Returns public download URL."""
     log(f"Creating GitHub release v{version}...")
 
     tag = f"v{version}"
-    # Create release (will fail if tag exists — delete first if needed)
     try:
         run(["gh", "release", "create", tag,
              "--repo", REPO,
@@ -140,11 +139,10 @@ def create_github_release(version: str, setup_file: str, zip_file: str,
              "--notes", notes or f"Release {tag}",
              setup_file, zip_file])
     except RuntimeError:
-        log("Release may already exist — trying to upload assets...")
+        log("Release may already exist — uploading assets with --clobber")
         run(["gh", "release", "upload", tag, setup_file, zip_file,
              "--repo", REPO, "--clobber"])
 
-    # Construct download URL
     setup_name = os.path.basename(setup_file)
     download_url = f"https://github.com/{REPO}/releases/download/{tag}/{setup_name}"
     log(f"Download URL: {download_url}")
@@ -210,7 +208,7 @@ def main() -> None:
     parser.add_argument("version", help="New version (e.g., 1.0.1)")
     parser.add_argument("--notes", default="", help="Release notes")
     parser.add_argument("--skip-build", action="store_true", help="Skip exe/installer build")
-    parser.add_argument("--skip-github", action="store_true", help="Skip GitHub release upload")
+    parser.add_argument("--skip-upload", action="store_true", help="Skip upload to Supabase Storage / GitHub")
     parser.add_argument("--skip-supabase", action="store_true", help="Skip Supabase table update")
     args = parser.parse_args()
 
@@ -230,8 +228,8 @@ def main() -> None:
         zip_file = os.path.join(PROJECT_DIR, "dist", f"StreamBridge-{version}-Portable.zip")
 
     download_url = ""
-    if not args.skip_github:
-        download_url = create_github_release(version, setup_file, zip_file, args.notes)
+    if not args.skip_upload:
+        download_url = upload_release(version, setup_file, zip_file, args.notes)
 
     if not args.skip_supabase and download_url:
         update_supabase_version(version, download_url, args.notes)

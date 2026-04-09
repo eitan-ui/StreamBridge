@@ -32,14 +32,28 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Rate limiting: max 5 code requests per email per 15 minutes
+    // Look up license — email MUST be pre-authorized (paid user)
     const { data: existing } = await supabase
       .from("licenses")
-      .select("active, code_expires_at, code_request_count, code_request_window")
+      .select("active, authorized, code_expires_at, code_request_count, code_request_window")
       .eq("email", cleanEmail)
       .maybeSingle();
 
-    if (existing && !existing.active) {
+    if (!existing) {
+      return new Response(
+        JSON.stringify({ success: false, error: "This email is not registered. Please contact support to purchase a license." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!existing.authorized) {
+      return new Response(
+        JSON.stringify({ success: false, error: "This email is not authorized. Please contact support to activate your license." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!existing.active) {
       return new Response(
         JSON.stringify({ success: false, error: "This license has been deactivated. Contact support." }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -82,21 +96,17 @@ serve(async (req) => {
     const newCount = windowExpired ? 1 : (existing?.code_request_count || 0) + 1;
     const newWindow = windowExpired ? now.toISOString() : (existing?.code_request_window || now.toISOString());
 
-    // Upsert into licenses
+    // Update license with new code (email already exists + authorized)
     const { error: dbError } = await supabase
       .from("licenses")
-      .upsert(
-        {
-          email: cleanEmail,
-          username: cleanEmail,
-          activation_code: formattedCode,
-          code_expires_at: expiresAt,
-          code_verified: false,
-          code_request_count: newCount,
-          code_request_window: newWindow,
-        },
-        { onConflict: "email" }
-      );
+      .update({
+        activation_code: formattedCode,
+        code_expires_at: expiresAt,
+        code_verified: false,
+        code_request_count: newCount,
+        code_request_window: newWindow,
+      })
+      .eq("email", cleanEmail);
 
     if (dbError) {
       console.error("DB error:", dbError);
