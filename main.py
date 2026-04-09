@@ -128,6 +128,26 @@ def main() -> None:
             sys.exit(0)
         logger.info("License activated")
 
+    # Check for updates (shows dialog if available)
+    try:
+        from utils.license import check_for_update
+        from gui.update_dialog import UpdateDialog
+
+        update = check_for_update(VERSION)
+        if update:
+            dialog = UpdateDialog(
+                version=update.get("version", "?"),
+                download_url=update.get("download_url", ""),
+                release_notes=update.get("release_notes", ""),
+            )
+            if dialog.exec():
+                # User clicked Download & Install — installer launched, quit app
+                logger.info("Update installer launched, exiting")
+                _release_lock()
+                sys.exit(0)
+    except Exception as e:
+        logger.warning(f"Update check failed: {e}")
+
     # Load config and check FFmpeg
     config = Config.load()
     ffmpeg_path = check_ffmpeg_or_prompt(config.ffmpeg_path)

@@ -1,13 +1,12 @@
 import sys
 import subprocess
-import webbrowser
 
-from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
 from gui.theme import (
-    FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY,
+    FONT_MONO, TEXT_SECONDARY,
     ACCENT, SUCCESS, WARNING, FONT_LG, FONT_MD, FONT_SM, SPACING_MD,
 )
 from gui.frameless import FramelessDialog
@@ -121,18 +120,21 @@ class AboutDialog(FramelessDialog):
 
         update = check_for_update(self.VERSION)
         if update:
-            self._download_url = update.get("download_url", "")
-            notes = update.get("release_notes", "")
             version = update.get("version", "?")
-            text = f"Update available: v{version}"
-            if notes:
-                text += f"\n{notes}"
-            if self._download_url:
-                text += "\nClick to download!"
-                self._update_label.setCursor(Qt.CursorShape.PointingHandCursor)
-                self._update_label.mousePressEvent = lambda e: webbrowser.open(self._download_url)
-            self._update_label.setText(text)
+            self._update_label.setText(f"Update available: v{version}")
             self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {WARNING}; font-weight: 600;")
+
+            from gui.update_dialog import UpdateDialog
+            dlg = UpdateDialog(
+                version=version,
+                download_url=update.get("download_url", ""),
+                release_notes=update.get("release_notes", ""),
+                parent=self,
+            )
+            if dlg.exec():
+                # Installer launched — close app
+                import sys as _sys
+                _sys.exit(0)
         else:
             self._update_label.setText("You're up to date!")
             self._update_label.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
