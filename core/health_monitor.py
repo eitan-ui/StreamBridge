@@ -314,6 +314,12 @@ class HealthMonitor(QObject):
 
         elif state == StreamState.ERROR:
             if self._auto_reconnect_enabled:
+                if self._reconnect_count == 0:
+                    source = self._last_url or self._last_device
+                    self._alert_system.trigger_telegram_alert(
+                        f"StreamBridge: Connection lost to {source}. Reconnecting...",
+                        event_type="disconnect",
+                    )
                 self._attempt_reconnect()
 
     def _on_audio_levels(self, levels: AudioLevels) -> None:

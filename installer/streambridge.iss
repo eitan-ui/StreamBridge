@@ -35,8 +35,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequired=admin
 MinVersion=10.0
 
 [Languages]
@@ -85,8 +84,9 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  // Always kill any running instance (both silent and interactive modes)
+  // Always kill any running instance and its ffmpeg subprocess
   Exec('taskkill', '/f /im StreamBridge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill', '/f /im ffmpeg.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(1500);
 end;
 

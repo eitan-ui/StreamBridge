@@ -332,6 +332,11 @@ class MainWindow(QMainWindow):
 
         # Alert system signals
         self._alert_system.log_message.connect(self._add_log)
+        self._alert_system.telegram_connect.connect(self._on_telegram_connect)
+        self._alert_system.telegram_disconnect.connect(self._on_telegram_disconnect)
+        self._alert_system.telegram_status.connect(self._on_telegram_status)
+        self._alert_system.telegram_command.connect(self._on_telegram_command)
+        self._alert_system._start_telegram_poller()
 
         # mAirList API signals
         self._mairlist_api.log_message.connect(self._add_log)
@@ -425,12 +430,20 @@ class MainWindow(QMainWindow):
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
 
+        self._relay.set_stream_active(True)
         self._engine.start(url=url, device=device)
         self._health_monitor.start_monitoring(url=url, device=device)
         self._uptime_timer.start()
 
+        source = url or device
+        self._alert_system.trigger_telegram_alert(
+            f"StreamBridge: Connected to {source}",
+            event_type="connect",
+        )
+
     def _on_stop(self) -> None:
         self._is_streaming = False
+        self._relay.set_stream_active(False)
         self._health_monitor.stop_monitoring()
         self._engine.stop()
         self._uptime_timer.stop()
@@ -649,6 +662,292 @@ class MainWindow(QMainWindow):
     def _api_stop_stream(self) -> None:
         """Stop stream from API request."""
         self._on_stop()
+
+    # --- Telegram bot command handlers ---
+
+    def _on_telegram_connect(self) -> None:
+        if self._is_streaming:
+            self._alert_system.trigger_telegram_alert(
+                "StreamBridge: Already connected", event_type="connect", force=True
+            )
+            return
+        # Check if there's a source before calling _on_start (avoid QMessageBox popup)
+        url = self._url_input.text().strip()
+        device = self._device_combo.currentData() or ""
+        if not url and not device:
+            self._alert_system.trigger_telegram_alert(
+                "StreamBridge: No source configured.\n"
+                "Set a URL or audio device first (/inputs to change).",
+                force=True,
+            )
+            return
+        self._add_log("Telegram command: /connect")
+        self._on_start()
+
+    def _on_telegram_disconnect(self) -> None:
+        if not self._is_streaming:
+            self._alert_system.trigger_telegram_alert(
+                "StreamBridge: Already disconnected", event_type="disconnect", force=True
+            )
+            return
+        self._add_log("Telegram command: /disconnect")
+        self._on_stop()
+        self._alert_system.trigger_telegram_alert(
+            "StreamBridge: Stream stopped", event_type="disconnect", force=True
+        )
+
+    def _on_telegram_status(self) -> None:
+        source = self._url_input.text().strip() or self._device_combo.currentData() or "none"
+        lines = []
+        if self._is_streaming:
+            lines.append(f"Status: CONNECTED")
+            lines.append(f"Source: {source}")
+            lines.append(f"Uptime: {self._health_monitor.uptime_str}")
+            lines.append(f"HTTP clients: {self._relay.client_count}")
+        else:
+            lines.append(f"Status: DISCONNECTED")
+            lines.append(f"Last source: {source}")
+
+        # Auto-stop schedule info
+        auto = self._config.silence.auto_stop
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        lines.append(f"\nAuto-stop window: :{auto.window_start_min:02d}-:{auto.window_end_min:02d}")
+        lines.append(
+            f"Disabled: {day_names[auto.disable_from_day]} {auto.disable_from_hour}:00"
+            f" - {day_names[auto.disable_to_day]} {auto.disable_to_hour}:00"
+        )
+        import datetime as _dt
+        now = _dt.datetime.now()
+        in_window = auto.window_start_min <= now.minute <= auto.window_end_min
+        lines.append(f"In active window: {'Yes' if in_window else 'No'}")
+        current = now.weekday() * 24 + now.hour
+        start = auto.disable_from_day * 24 + auto.disable_from_hour
+        end = auto.disable_to_day * 24 + auto.disable_to_hour
+        if start <= end:
+            in_disabled = start <= current < end
+        else:
+            in_disabled = current >= start or current < end
+        lines.append(f"In disabled period: {'Yes' if in_disabled else 'No'}")
+
+        self._alert_system.trigger_telegram_alert(
+            "StreamBridge\n" + "\n".join(lines), force=True
+        )
+
+    def _on_telegram_command(self, command: str, args: str) -> None:
+        """Dispatch generic Telegram bot commands."""
+        dispatch = {
+            "next": self._tg_next,
+            "play": self._tg_play,
+            "stop": self._tg_stop,
+            "restart": self._tg_restart,
+            "turnoff": self._tg_turnoff,
+            "inputs": self._tg_inputs,
+            "settings": self._tg_settings,
+        }
+        handler = dispatch.get(command)
+        if handler:
+            if command in ("inputs", "settings"):
+                handler(args)
+            else:
+                handler()
+
+    def _tg_next(self) -> None:
+        ml = self._config.mairlist
+        if not ml.enabled:
+            self._alert_system.trigger_telegram_alert("mAirList not enabled", force=True)
+            return
+        self._add_log("Telegram command: /next")
+        self._mairlist_api.send_command(ml.command)
+        self._alert_system.trigger_telegram_alert("NEXT sent to mAirList", force=True)
+
+    def _tg_play(self) -> None:
+        ml = self._config.mairlist
+        if not ml.enabled:
+            self._alert_system.trigger_telegram_alert("mAirList not enabled", force=True)
+            return
+        self._add_log("Telegram command: /play")
+        self._mairlist_api.player_command(ml.action_player, "START")
+        self._alert_system.trigger_telegram_alert(
+            f"PLAY sent (Player {ml.action_player})", force=True
+        )
+
+    def _tg_stop(self) -> None:
+        ml = self._config.mairlist
+        if not ml.enabled:
+            self._alert_system.trigger_telegram_alert("mAirList not enabled", force=True)
+            return
+        self._add_log("Telegram command: /stop")
+        cmd = ml.command.rsplit(None, 1)[0] + " STOP"  # AUTOMATION 1 STOP
+        self._mairlist_api.send_command(cmd)
+        self._alert_system.trigger_telegram_alert(f"STOP sent: {cmd}", force=True)
+
+    def _tg_restart(self) -> None:
+        import subprocess, sys, os
+        self._add_log("Telegram command: /restart — restarting...")
+        if self._is_streaming:
+            self._on_stop()
+        # Launch new instance before quitting
+        main_path = os.path.abspath(sys.argv[0])
+        subprocess.Popen([sys.executable, main_path])
+        from PyQt6.QtWidgets import QApplication
+        QApplication.quit()
+        os._exit(0)
+
+    def _tg_turnoff(self) -> None:
+        import os
+        self._add_log("Telegram command: /turnoff — shutting down...")
+        if self._is_streaming:
+            self._on_stop()
+        from PyQt6.QtWidgets import QApplication
+        QApplication.quit()
+        os._exit(0)
+
+    def _tg_inputs(self, args: str) -> None:
+        from core.stream_engine import StreamEngine
+        devices = StreamEngine.list_audio_devices(self._config.ffmpeg_path)
+
+        if not args.strip():
+            # List devices
+            lines = ["Audio inputs:"]
+            lines.append("0 — URL only (no device)")
+            for i, (dev_id, dev_name) in enumerate(devices, 1):
+                current = "◀" if dev_id == (self._device_combo.currentData() or "") else ""
+                lines.append(f"{i} — {dev_name} {current}")
+            lines.append("\nSend /inputs <number> to change")
+            self._alert_system.trigger_telegram_alert("\n".join(lines), force=True)
+            return
+
+        try:
+            idx = int(args.strip())
+        except ValueError:
+            self._alert_system.trigger_telegram_alert(
+                "Invalid input. Send /inputs to see the list.", force=True
+            )
+            return
+
+        if idx == 0:
+            self._device_combo.setCurrentIndex(0)
+            self._config.audio_input_device = ""
+            self._config.save()
+            self._alert_system.trigger_telegram_alert(
+                "Input changed to: URL only (no device)", force=True
+            )
+        elif 1 <= idx <= len(devices):
+            dev_id, dev_name = devices[idx - 1]
+            combo_idx = self._device_combo.findData(dev_id)
+            if combo_idx >= 0:
+                self._device_combo.setCurrentIndex(combo_idx)
+            self._config.audio_input_device = dev_id
+            self._config.save()
+            self._alert_system.trigger_telegram_alert(
+                f"Input changed to: {dev_name}", force=True
+            )
+            # Reconnect if streaming
+            if self._is_streaming:
+                self._on_stop()
+                self._on_start()
+        else:
+            self._alert_system.trigger_telegram_alert(
+                f"Invalid number. Range: 0-{len(devices)}", force=True
+            )
+
+    def _tg_settings(self, args: str) -> None:
+        sections = {
+            "silence": (self._config.silence, [
+                "threshold_db", "warning_delay_s", "alert_delay_s"]),
+            "autostop": (self._config.silence.auto_stop, [
+                "enabled", "delay_s", "window_start_min", "window_end_min",
+                "disable_from_day", "disable_from_hour",
+                "disable_to_day", "disable_to_hour"]),
+            "reconnect": (self._config.reconnect, [
+                "initial_delay_s", "max_delay_s", "max_retries"]),
+            "mairlist": (self._config.mairlist, [
+                "enabled", "command", "action_player", "action_playlist"]),
+            "telegram": (self._config.alerts.telegram, [
+                "notify_on_connect", "notify_on_silence",
+                "notify_on_disconnect", "notify_on_auto_stop"]),
+            "schedule": (self._config.schedule, [
+                "enabled", "keep_playing_on_gap"]),
+        }
+
+        parts = args.strip().split(None, 2)
+
+        if not parts:
+            # List sections
+            lines = ["Settings sections:"]
+            for name in sections:
+                lines.append(f"  /settings {name}")
+            lines.append("\nView: /settings <section>")
+            lines.append("Change: /settings <section> <param> <value>")
+            self._alert_system.trigger_telegram_alert("\n".join(lines), force=True)
+            return
+
+        section_name = parts[0].lower()
+        if section_name not in sections:
+            self._alert_system.trigger_telegram_alert(
+                f"Unknown section: {section_name}\n"
+                f"Available: {', '.join(sections.keys())}", force=True
+            )
+            return
+
+        obj, fields = sections[section_name]
+
+        if len(parts) == 1:
+            # Show section values
+            lines = [f"Settings — {section_name}:"]
+            for field in fields:
+                val = getattr(obj, field)
+                lines.append(f"  {field} = {val}")
+            self._alert_system.trigger_telegram_alert("\n".join(lines), force=True)
+            return
+
+        if len(parts) < 3:
+            self._alert_system.trigger_telegram_alert(
+                f"Usage: /settings {section_name} <param> <value>", force=True
+            )
+            return
+
+        param = parts[1].lower()
+        value_str = parts[2]
+
+        if param not in fields:
+            self._alert_system.trigger_telegram_alert(
+                f"Unknown param: {param}\n"
+                f"Available: {', '.join(fields)}", force=True
+            )
+            return
+
+        # Cast value to correct type
+        current = getattr(obj, param)
+        try:
+            if isinstance(current, bool):
+                value = value_str.lower() in ("true", "1", "yes", "si")
+            elif isinstance(current, int):
+                value = int(value_str)
+            elif isinstance(current, float):
+                value = float(value_str)
+            else:
+                value = value_str
+        except (ValueError, TypeError):
+            self._alert_system.trigger_telegram_alert(
+                f"Invalid value: {value_str} (expected {type(current).__name__})",
+                force=True,
+            )
+            return
+
+        setattr(obj, param, value)
+        self._config.validate()
+        self._config.save()
+        # Propagate changes
+        self._alert_system.update_config(self._config.alerts)
+        self._health_monitor.update_config(self._config)
+        self._mairlist_api.update_config(self._config.mairlist)
+        self._scheduler.update_config(self._config.schedule)
+
+        self._add_log(f"Telegram settings: {section_name}.{param} = {value}")
+        self._alert_system.trigger_telegram_alert(
+            f"Setting updated: {section_name}.{param} = {value}", force=True
+        )
 
     def _api_config_updated(self, config: Config) -> None:
         """Config updated from API request."""

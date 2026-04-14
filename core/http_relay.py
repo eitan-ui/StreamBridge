@@ -131,6 +131,7 @@ class HttpRelay(QObject):
         self._clients: Set[web.StreamResponse] = set()
         self._clients_lock = threading.Lock()
         self._running = False
+        self._stream_active = False  # True while engine is streaming
         self._api_server = None  # Set by main_window after construction
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -150,6 +151,10 @@ class HttpRelay(QObject):
     def client_count(self) -> int:
         with self._clients_lock:
             return len(self._clients)
+
+    def set_stream_active(self, active: bool) -> None:
+        """Mark whether the stream engine is actively producing audio."""
+        self._stream_active = active
 
     def feed_audio(self, pcm_data: bytes) -> None:
         """Feed raw PCM audio data to the relay."""
@@ -279,7 +284,8 @@ class HttpRelay(QObject):
     def _distribute_loop(self) -> None:
         """Reads PCM from buffer and distributes to all client queues.
         Drains all available data at once to minimize event loop callbacks.
-        Sends silence when buffer is empty to keep the stream alive."""
+        Sends silence when buffer is empty and stream is active.
+        Signals clients to disconnect when stream is not active."""
         last_pcm_time = 0.0
         while self._running:
             # Drain ALL available PCM at once — one callback instead of many
@@ -294,11 +300,15 @@ class HttpRelay(QObject):
                     with self._client_queues_lock:
                         has_clients = bool(self._client_queues)
                     if has_clients:
-                        self._enqueue_to_clients(SILENCE_FRAME)
+                        if self._stream_active:
+                            self._enqueue_to_clients(SILENCE_FRAME)
+                        else:
+                            # Stream not active — signal clients to disconnect
+                            self._enqueue_to_clients(None)
                 time.sleep(0.010)
 
-    def _enqueue_to_clients(self, data: bytes) -> None:
-        """Put a PCM chunk into every client's queue (thread-safe)."""
+    def _enqueue_to_clients(self, data: bytes | None) -> None:
+        """Put a PCM chunk (or None sentinel) into every client's queue."""
         if not self._loop or self._loop.is_closed():
             return
 
@@ -323,6 +333,11 @@ class HttpRelay(QObject):
 
     async def _handle_stream(self, request: web.Request) -> web.StreamResponse:
         """Handle a client connection to /stream. Sends WAV header then PCM."""
+        # If stream is not active, return 503 so mAirList treats it
+        # like the server is down and advances to the next item.
+        if not self._stream_active:
+            return web.Response(status=503, text="Stream not active")
+
         response = web.StreamResponse(
             status=200,
             headers={
@@ -354,6 +369,9 @@ class HttpRelay(QObject):
                     chunk = await asyncio.wait_for(
                         client_queue.get(), timeout=0.5
                     )
+                    if chunk is None:
+                        # Stream not active — close connection so player advances
+                        break
                     await response.write(chunk)
                 except asyncio.TimeoutError:
                     continue

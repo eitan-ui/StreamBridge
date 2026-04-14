@@ -44,6 +44,7 @@ class TelegramConfig:
     bot_token: str = ""   # from @BotFather
     chat_id: str = ""     # user/group chat ID
     # Event filters — which events trigger a Telegram alert
+    notify_on_connect: bool = True
     notify_on_silence: bool = False
     notify_on_disconnect: bool = True
     notify_on_auto_stop: bool = False

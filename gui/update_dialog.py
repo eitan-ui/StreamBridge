@@ -3,11 +3,12 @@
 Downloads the installer and launches it on user confirmation.
 """
 
+import ctypes
 import os
-import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
@@ -157,23 +158,21 @@ class UpdateDialog(FramelessDialog):
         self._status.setStyleSheet(f"font-size: {FONT_SM}px; color: {SUCCESS};")
         self._progress.setValue(100)
 
-        # Launch installer in silent mode — it will kill the running app,
-        # replace files, and auto-start the new version. We exit immediately
-        # so the installer can safely overwrite our exe and DLL files.
+        # Launch installer with admin elevation (UAC). The installer's
+        # InitializeSetup does taskkill to close this app, then installs
+        # and relaunches. We use ShellExecuteW with "runas" verb to
+        # trigger UAC elevation, since subprocess.Popen cannot do that.
         try:
             if sys.platform == "win32":
-                # /VERYSILENT: no UI, no progress
-                # /SUPPRESSMSGBOXES: auto-answer prompts
-                # /NORESTART: don't reboot Windows
-                # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: fully detach
-                DETACHED_PROCESS = 0x00000008
-                CREATE_NEW_PROCESS_GROUP = 0x00000200
-                subprocess.Popen(
-                    [path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                    close_fds=True,
+                params = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+                ret = ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", path, params, None, 1,
                 )
+                # ShellExecuteW returns > 32 on success
+                if ret <= 32:
+                    raise OSError(f"ShellExecuteW failed (code {ret})")
             else:
+                import subprocess
                 subprocess.Popen(["open", path])
         except Exception as e:
             self._status.setText(f"Failed to launch installer: {e}")
@@ -182,8 +181,9 @@ class UpdateDialog(FramelessDialog):
             self._later_btn.setEnabled(True)
             return
 
-        # Accept dialog — main.py will os._exit(0) which kills Python
-        # cleanly so PyInstaller's _MEI temp folder isn't locked anymore
+        # Give the installer a moment to start before we exit,
+        # so it's fully running before the app process terminates.
+        time.sleep(2)
         self.accept()
 
     def _on_failed(self, err: str) -> None:

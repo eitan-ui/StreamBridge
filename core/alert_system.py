@@ -1,4 +1,5 @@
 import json
+import time as _time
 import urllib.request
 import urllib.parse
 import threading
@@ -14,14 +15,24 @@ class AlertSystem(QObject):
 
     log_message = pyqtSignal(str)
     alert_sent = pyqtSignal(str)  # alert type: "sound", "whatsapp", "telegram"
+    # Telegram bot command signals
+    telegram_connect = pyqtSignal()     # user sent /connect
+    telegram_disconnect = pyqtSignal()  # user sent /disconnect
+    telegram_status = pyqtSignal()      # user sent /status
+    telegram_command = pyqtSignal(str, str)  # (command, args)
 
     def __init__(self, config: AlertConfig) -> None:
         super().__init__()
         self._config = config
         self._sound_effect: QSoundEffect | None = None
+        self._tg_poll_thread: threading.Thread | None = None
+        self._tg_poll_stop = threading.Event()
+        self._tg_last_update_id = 0
+        self._pending_confirmation: dict | None = None
 
     def update_config(self, config: AlertConfig) -> None:
         self._config = config
+        self._start_telegram_poller()
 
     def trigger_sound_alert(self) -> None:
         """Play an alert sound on the local system."""
@@ -101,11 +112,17 @@ class AlertSystem(QObject):
         force: bypass event filters (used by test button)
         """
         tg = self._config.telegram
-        if not tg.enabled or not tg.bot_token or not tg.chat_id:
+        if not tg.enabled:
+            self.log_message.emit(f"Telegram alert skipped: not enabled")
+            return
+        if not tg.bot_token or not tg.chat_id:
+            self.log_message.emit(f"Telegram alert skipped: missing bot_token or chat_id")
             return
 
         if not force:
             # Check per-event filter
+            if event_type == "connect" and not tg.notify_on_connect:
+                return
             if event_type == "silence" and not tg.notify_on_silence:
                 return
             if event_type == "disconnect" and not tg.notify_on_disconnect:
@@ -143,6 +160,153 @@ class AlertSystem(QObject):
                     )
         except Exception as e:
             self.log_message.emit(f"Telegram alert failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Telegram bot command poller
+    # ------------------------------------------------------------------
+
+    def _start_telegram_poller(self) -> None:
+        """Start (or restart) the background thread that polls for bot commands."""
+        tg = self._config.telegram
+        if not tg.enabled or not tg.bot_token or not tg.chat_id:
+            self._stop_telegram_poller()
+            return
+        if self._tg_poll_thread and self._tg_poll_thread.is_alive():
+            return  # already running
+        self._tg_poll_stop.clear()
+        self._tg_poll_thread = threading.Thread(
+            target=self._telegram_poll_loop, daemon=True
+        )
+        self._tg_poll_thread.start()
+        self.log_message.emit("Telegram bot command listener started")
+
+    def _stop_telegram_poller(self) -> None:
+        if self._tg_poll_thread and self._tg_poll_thread.is_alive():
+            self._tg_poll_stop.set()
+            self._tg_poll_thread = None
+
+    def _telegram_poll_loop(self) -> None:
+        """Long-poll getUpdates and dispatch commands."""
+        tg = self._config.telegram
+        base = f"https://api.telegram.org/bot{tg.bot_token}"
+        allowed_chat = str(tg.chat_id)
+
+        while not self._tg_poll_stop.is_set():
+            try:
+                url = (
+                    f"{base}/getUpdates?timeout=30"
+                    f"&offset={self._tg_last_update_id + 1}"
+                    f"&allowed_updates=[\"message\"]"
+                )
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=40) as resp:
+                    data = json.loads(resp.read().decode())
+
+                for update in data.get("result", []):
+                    self._tg_last_update_id = update["update_id"]
+                    msg = update.get("message", {})
+                    chat_id = str(msg.get("chat", {}).get("id", ""))
+                    if chat_id != allowed_chat:
+                        continue
+                    text = (msg.get("text") or "").strip().lower()
+                    self._handle_telegram_command(text, base, chat_id)
+
+            except Exception:
+                # Network error — wait and retry
+                self._tg_poll_stop.wait(5)
+
+    def _handle_telegram_command(self, text: str, base_url: str,
+                                  chat_id: str) -> None:
+        """Process a single Telegram command."""
+        # Handle pending confirmation (restart/turnoff)
+        if self._pending_confirmation:
+            if _time.time() > self._pending_confirmation["expires"]:
+                self._pending_confirmation = None
+                self._telegram_reply(base_url, chat_id, "Confirmation expired.")
+            elif text in ("yes", "si", "sí"):
+                action = self._pending_confirmation["action"]
+                self._pending_confirmation = None
+                self._telegram_reply(base_url, chat_id, f"Confirmed. Executing {action}...")
+                self.telegram_command.emit(action, "")
+            else:
+                self._pending_confirmation = None
+                self._telegram_reply(base_url, chat_id, "Cancelled.")
+            return
+
+        # Parse command and args
+        parts = text.split(None, 1)
+        cmd = parts[0] if parts else ""
+        args = parts[1] if len(parts) > 1 else ""
+
+        if cmd in ("/connect", "connect"):
+            self.telegram_connect.emit()
+            self._telegram_reply(base_url, chat_id, "StreamBridge: Connecting...")
+        elif cmd in ("/disconnect", "disconnect"):
+            self.telegram_disconnect.emit()
+            self._telegram_reply(base_url, chat_id, "StreamBridge: Disconnecting...")
+        elif cmd in ("/status", "status"):
+            self.telegram_status.emit()
+        elif cmd in ("/next", "next"):
+            self.telegram_command.emit("next", "")
+            self._telegram_reply(base_url, chat_id, "Sending NEXT to mAirList...")
+        elif cmd in ("/play", "play"):
+            self.telegram_command.emit("play", "")
+            self._telegram_reply(base_url, chat_id, "Sending PLAY to mAirList...")
+        elif cmd in ("/stop", "stop"):
+            self.telegram_command.emit("stop", "")
+            self._telegram_reply(base_url, chat_id, "Sending STOP to mAirList...")
+        elif cmd in ("/inputs", "inputs"):
+            self.telegram_command.emit("inputs", args)
+        elif cmd in ("/settings", "settings"):
+            self.telegram_command.emit("settings", args)
+        elif cmd in ("/restart", "restart"):
+            self._pending_confirmation = {
+                "action": "restart",
+                "expires": _time.time() + 30,
+            }
+            self._telegram_reply(
+                base_url, chat_id,
+                "Are you sure you want to restart StreamBridge?\n"
+                "Send 'yes' or 'si' to confirm (30s timeout)."
+            )
+        elif cmd in ("/turnoff", "turnoff"):
+            self._pending_confirmation = {
+                "action": "turnoff",
+                "expires": _time.time() + 30,
+            }
+            self._telegram_reply(
+                base_url, chat_id,
+                "Are you sure you want to shut down StreamBridge?\n"
+                "Send 'yes' or 'si' to confirm (30s timeout)."
+            )
+        elif cmd in ("/start", "/help", "help"):
+            self._telegram_reply(
+                base_url, chat_id,
+                "StreamBridge Bot Commands:\n"
+                "/connect — Start the stream\n"
+                "/disconnect — Stop the stream\n"
+                "/status — Stream status & info\n"
+                "/next — mAirList: next item\n"
+                "/play — mAirList: start player\n"
+                "/stop — mAirList: stop player\n"
+                "/inputs — List/change audio input\n"
+                "/settings — View/change settings\n"
+                "/restart — Restart StreamBridge\n"
+                "/turnoff — Shut down StreamBridge"
+            )
+
+    def _telegram_reply(self, base_url: str, chat_id: str, text: str) -> None:
+        """Send a reply message to Telegram."""
+        try:
+            url = f"{base_url}/sendMessage"
+            body = json.dumps({"chat_id": chat_id, "text": text}).encode()
+            req = urllib.request.Request(
+                url, data=body, method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            pass
 
     def trigger_all(self, message: str, event_type: str = "silence") -> None:
         """Trigger all configured alerts.

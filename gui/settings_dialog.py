@@ -375,7 +375,7 @@ class SettingsDialog(FramelessDialog):
         # Telegram section
         tg_group = QGroupBox("Telegram Notifications")
         tg_layout = QFormLayout(tg_group)
-        tg_layout.setSpacing(SPACING_MD)
+        tg_layout.setSpacing(6)
 
         tg = self._config.alerts.telegram
 
@@ -388,53 +388,188 @@ class SettingsDialog(FramelessDialog):
         self._tg_bot_token_input.setEchoMode(QLineEdit.EchoMode.Password)
         tg_layout.addRow("Bot Token:", self._tg_bot_token_input)
 
+        chat_id_row = QHBoxLayout()
+        chat_id_row.setSpacing(6)
         self._tg_chat_id_input = QLineEdit(tg.chat_id)
-        self._tg_chat_id_input.setPlaceholderText("e.g. 123456789 (your numeric ID, NOT the bot username)")
-        tg_layout.addRow("Chat ID:", self._tg_chat_id_input)
+        self._tg_chat_id_input.setPlaceholderText("e.g. 123456789 (click 'Detect' to fill automatically)")
+        chat_id_row.addWidget(self._tg_chat_id_input, stretch=1)
+        self._tg_detect_btn = QPushButton("Detect")
+        self._tg_detect_btn.setToolTip(
+            "Fills the Chat ID automatically using the Bot Token.\n"
+            "First send any message (like /start) to your bot in Telegram."
+        )
+        self._tg_detect_btn.clicked.connect(self._on_detect_chat_id)
+        chat_id_row.addWidget(self._tg_detect_btn)
+        tg_layout.addRow("Chat ID:", chat_id_row)
 
         tg_help = QLabel(
-            "Setup steps:\n"
-            "1. Chat with @BotFather on Telegram and type /newbot to create a bot.\n"
-            "2. Copy the bot token (looks like 123456:ABC-DEF...) and paste it above.\n"
-            "3. Open a chat with your new bot and send /start (required!).\n"
-            "4. Chat with @userinfobot and copy YOUR numeric ID (e.g. 123456789).\n"
-            "   That number is your Chat ID — not the bot's @username."
+            "Create a bot with @BotFather → paste token → click Detect → test."
         )
         tg_help.setStyleSheet("color: #8a9bae; font-size: 11px;")
-        tg_help.setWordWrap(True)
+        tg_help.setToolTip(
+            "Setup steps:\n"
+            "1. Chat with @BotFather on Telegram and type /newbot.\n"
+            "2. Paste the bot token above.\n"
+            "3. Click Detect — it opens your bot automatically.\n"
+            "4. Press Start in Telegram, click Detect again.\n"
+            "5. Click Send test message to verify."
+        )
         tg_layout.addRow(tg_help)
 
-        # Event filters
+        # Event filters — compact horizontal layout
         tg_filters_label = QLabel("Notify on:")
-        tg_filters_label.setStyleSheet("font-weight: 600; margin-top: 6px;")
+        tg_filters_label.setStyleSheet("font-weight: 600;")
         tg_layout.addRow(tg_filters_label)
 
-        self._tg_notify_silence_check = QCheckBox("Prolonged silence")
-        self._tg_notify_silence_check.setChecked(tg.notify_on_silence)
-        tg_layout.addRow(self._tg_notify_silence_check)
-
-        self._tg_notify_disconnect_check = QCheckBox("Stream disconnect (reconnect failed)")
+        filters_row1 = QHBoxLayout()
+        filters_row1.setSpacing(12)
+        self._tg_notify_connect_check = QCheckBox("Connected")
+        self._tg_notify_connect_check.setChecked(tg.notify_on_connect)
+        filters_row1.addWidget(self._tg_notify_connect_check)
+        self._tg_notify_disconnect_check = QCheckBox("Disconnected")
         self._tg_notify_disconnect_check.setChecked(tg.notify_on_disconnect)
-        tg_layout.addRow(self._tg_notify_disconnect_check)
+        filters_row1.addWidget(self._tg_notify_disconnect_check)
+        filters_row1.addStretch()
+        tg_layout.addRow(filters_row1)
 
-        self._tg_notify_auto_stop_check = QCheckBox("Auto-stop triggered (silence/tone)")
+        filters_row2 = QHBoxLayout()
+        filters_row2.setSpacing(12)
+        self._tg_notify_silence_check = QCheckBox("Silence")
+        self._tg_notify_silence_check.setChecked(tg.notify_on_silence)
+        filters_row2.addWidget(self._tg_notify_silence_check)
+        self._tg_notify_auto_stop_check = QCheckBox("Auto-stop")
         self._tg_notify_auto_stop_check.setChecked(tg.notify_on_auto_stop)
-        tg_layout.addRow(self._tg_notify_auto_stop_check)
+        filters_row2.addWidget(self._tg_notify_auto_stop_check)
+        filters_row2.addStretch()
+        tg_layout.addRow(filters_row2)
 
-        # Test button
+        # Test button + status on same row
+        test_row = QHBoxLayout()
+        test_row.setSpacing(8)
         self._tg_test_btn = QPushButton("Send test message")
         self._tg_test_btn.clicked.connect(self._on_test_telegram)
-        tg_layout.addRow(self._tg_test_btn)
-
+        test_row.addWidget(self._tg_test_btn)
         self._tg_test_status = QLabel("")
         self._tg_test_status.setStyleSheet("font-size: 11px;")
         self._tg_test_status.setWordWrap(True)
-        tg_layout.addRow(self._tg_test_status)
+        test_row.addWidget(self._tg_test_status, stretch=1)
+        tg_layout.addRow(test_row)
 
         layout.addWidget(tg_group)
         layout.addStretch()
 
         return tab
+
+    def _on_detect_chat_id(self) -> None:
+        """Fetch getUpdates from Telegram and fill the Chat ID automatically."""
+        import threading
+        import json as _json
+        import urllib.request as _ur
+        import urllib.error as _uer
+
+        token = self._tg_bot_token_input.text().strip()
+        if not token:
+            self._tg_test_status.setText("Enter the Bot Token first")
+            self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+            return
+
+        self._tg_test_status.setText("Looking for messages...")
+        self._tg_test_status.setStyleSheet("color: #8a9bae; font-size: 11px;")
+        self._tg_detect_btn.setEnabled(False)
+
+        def _worker():
+            try:
+                url = f"https://api.telegram.org/bot{token}/getUpdates"
+                req = _ur.Request(url, method="GET")
+                try:
+                    with _ur.urlopen(req, timeout=15) as resp:
+                        data = _json.loads(resp.read().decode())
+                except _uer.HTTPError as http_err:
+                    tg_desc = ""
+                    try:
+                        err_body = _json.loads(http_err.read().decode())
+                        tg_desc = err_body.get("description", "")
+                    except Exception:
+                        pass
+                    if http_err.code in (401, 404):
+                        msg = "Invalid bot token. Check it with @BotFather."
+                    else:
+                        msg = f"Telegram error: {tg_desc or f'HTTP {http_err.code}'}"
+                    self._tg_test_status.setText(msg)
+                    self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+                    return
+
+                if not data.get("ok"):
+                    self._tg_test_status.setText(
+                        f"Telegram error: {data.get('description', 'unknown')}"
+                    )
+                    self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+                    return
+
+                results = data.get("result", [])
+                if not results:
+                    # Try to get bot username and open it in Telegram
+                    bot_username = ""
+                    try:
+                        me_url = f"https://api.telegram.org/bot{token}/getMe"
+                        with _ur.urlopen(_ur.Request(me_url), timeout=10) as me_resp:
+                            me_data = _json.loads(me_resp.read().decode())
+                            bot_username = me_data.get("result", {}).get("username", "")
+                    except Exception:
+                        pass
+
+                    if bot_username:
+                        import webbrowser
+                        webbrowser.open(f"https://t.me/{bot_username}?start=setup")
+                        self._tg_test_status.setText(
+                            f"Opening @{bot_username} in Telegram... "
+                            "Press Start there, then click Detect again."
+                        )
+                    else:
+                        self._tg_test_status.setText(
+                            "No messages yet. Open your bot in Telegram, "
+                            "press Start, then click Detect again."
+                        )
+                    self._tg_test_status.setStyleSheet("color: #e67e22; font-size: 11px;")
+                    return
+
+                # Pick the most recent message's chat.id
+                chat_id = None
+                sender_name = ""
+                for update in reversed(results):
+                    msg = update.get("message") or update.get("edited_message") or {}
+                    chat = msg.get("chat") or {}
+                    if "id" in chat:
+                        chat_id = str(chat["id"])
+                        sender_name = chat.get("first_name") or chat.get("title") or ""
+                        break
+
+                if not chat_id:
+                    self._tg_test_status.setText(
+                        "Could not find a chat ID in the recent updates. "
+                        "Send any message to your bot and try again."
+                    )
+                    self._tg_test_status.setStyleSheet("color: #e67e22; font-size: 11px;")
+                    return
+
+                self._tg_chat_id_input.setText(chat_id)
+                if sender_name:
+                    self._tg_test_status.setText(
+                        f"Chat ID detected for {sender_name}: {chat_id}. "
+                        "Click 'Send test message' to verify."
+                    )
+                else:
+                    self._tg_test_status.setText(
+                        f"Chat ID detected: {chat_id}. Click 'Send test message' to verify."
+                    )
+                self._tg_test_status.setStyleSheet("color: #2ecc71; font-size: 11px;")
+            except Exception as e:
+                self._tg_test_status.setText(f"Detect failed: {e}")
+                self._tg_test_status.setStyleSheet("color: #e74c3c; font-size: 11px;")
+            finally:
+                self._tg_detect_btn.setEnabled(True)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_test_telegram(self) -> None:
         """Send a Telegram test message using the current form values."""
@@ -905,6 +1040,7 @@ class SettingsDialog(FramelessDialog):
         tg.enabled = self._tg_enabled_check.isChecked()
         tg.bot_token = self._tg_bot_token_input.text().strip()
         tg.chat_id = self._tg_chat_id_input.text().strip()
+        tg.notify_on_connect = self._tg_notify_connect_check.isChecked()
         tg.notify_on_silence = self._tg_notify_silence_check.isChecked()
         tg.notify_on_disconnect = self._tg_notify_disconnect_check.isChecked()
         tg.notify_on_auto_stop = self._tg_notify_auto_stop_check.isChecked()
