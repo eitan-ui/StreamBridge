@@ -2,5 +2,5 @@ PyQt6>=6.6
 aiohttp>=3.9
 qasync>=0.27
 asyncssh>=2.14
-PyAudioWPatch>=0.2.12
+PyAudioWPatch>=0.2.12; sys_platform == "win32"
 truststore>=0.9
