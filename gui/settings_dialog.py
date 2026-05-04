@@ -699,6 +699,18 @@ class SettingsDialog(FramelessDialog):
         self._ml_action_next_check.setChecked(self._config.mairlist.action_next)
         actions_form.addRow(self._ml_action_next_check)
 
+        self._ml_next_cooldown_check = QCheckBox("Cooldown después de NEXT")
+        self._ml_next_cooldown_check.setChecked(self._config.mairlist.next_cooldown_enabled)
+        actions_form.addRow(self._ml_next_cooldown_check)
+
+        self._ml_next_cooldown_spin = QSpinBox()
+        self._ml_next_cooldown_spin.setRange(1, 30)
+        self._ml_next_cooldown_spin.setValue(self._config.mairlist.next_cooldown_minutes)
+        self._ml_next_cooldown_spin.setSuffix(" min")
+        self._ml_next_cooldown_spin.setEnabled(self._config.mairlist.next_cooldown_enabled)
+        self._ml_next_cooldown_check.toggled.connect(self._ml_next_cooldown_spin.setEnabled)
+        actions_form.addRow("Cooldown:", self._ml_next_cooldown_spin)
+
         self._ml_action_delete_check = QCheckBox("Delete current item from playlist")
         self._ml_action_delete_check.setChecked(self._config.mairlist.action_delete_item)
         actions_form.addRow(self._ml_action_delete_check)
@@ -1051,6 +1063,8 @@ class SettingsDialog(FramelessDialog):
         self._config.mairlist.silence_command = self._ml_silence_cmd_input.text().strip()
         self._config.mairlist.tone_command = self._ml_tone_cmd_input.text().strip()
         self._config.mairlist.action_next = self._ml_action_next_check.isChecked()
+        self._config.mairlist.next_cooldown_enabled = self._ml_next_cooldown_check.isChecked()
+        self._config.mairlist.next_cooldown_minutes = self._ml_next_cooldown_spin.value()
         self._config.mairlist.action_delete_item = self._ml_action_delete_check.isChecked()
         self._config.mairlist.action_change_timing = self._ml_action_timing_check.isChecked()
         self._config.mairlist.action_timing_value = self._ml_timing_combo.currentData()

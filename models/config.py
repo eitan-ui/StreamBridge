@@ -75,6 +75,9 @@ class MairListConfig:
     action_hard_cut_on_tone: bool = True   # Set FADEOUT=0 on current item when tone detected
     action_fast_fadein: bool = True        # Set short FADEIN on next item
     action_fadein_ms: int = 100            # FADEIN duration in ms (100ms = very fast cross-in)
+    # Next cooldown — prevent rapid repeated NEXT commands
+    next_cooldown_enabled: bool = True
+    next_cooldown_minutes: int = 5
 
 
 @dataclass

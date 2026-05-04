@@ -41,6 +41,7 @@ class MairListAPI(QObject):
         super().__init__()
         self._config = config
         self._tcp_lock = threading.Lock()
+        self._last_next_time: float = 0.0
 
     def update_config(self, config: MairListConfig) -> None:
         self._config = config
@@ -156,8 +157,21 @@ class MairListAPI(QObject):
 
         # 3. Next — send configured default command (AUTOMATION 1 NEXT)
         if ml.action_next:
-            commands.append(ml.command)
-            descriptions.append(f"Command: {ml.command}")
+            import time
+            now = time.time()
+            cooldown_active = (
+                ml.next_cooldown_enabled
+                and (now - self._last_next_time) < ml.next_cooldown_minutes * 60
+            )
+            if cooldown_active:
+                remaining = int(ml.next_cooldown_minutes * 60 - (now - self._last_next_time))
+                descriptions.append(
+                    f"NEXT skipped (cooldown {ml.next_cooldown_minutes}min active, {remaining}s left)"
+                )
+            else:
+                commands.append(ml.command)
+                descriptions.append(f"Command: {ml.command}")
+                self._last_next_time = now
 
         # 6. Custom command (detection-specific)
         custom_cmd = (ml.tone_command if detection_type == "tone"
