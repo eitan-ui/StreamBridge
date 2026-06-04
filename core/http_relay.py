@@ -18,6 +18,11 @@ BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
 SILENCE_FRAME = b"\x00" * (BYTES_PER_SECOND // 100)  # 10ms = 1920 bytes
 PCM_CHUNK_SIZE = 3840  # 20ms of audio (48000 * 2 * 2 / 50)
 
+# A connection that lives shorter than this is treated as a "probe"
+# (e.g. mAirList's periodic availability check) — it is not counted as a
+# real client and is not logged, to avoid connect/disconnect log spam.
+ESTABLISHED_AFTER_S = 2.0
+
 
 def _make_wav_header(sample_rate=48000, channels=2, bits=16) -> bytes:
     """Static 44-byte WAV header for streaming (indefinite length)."""
@@ -129,6 +134,9 @@ class HttpRelay(QObject):
         self._client_queues: dict[web.StreamResponse, asyncio.Queue] = {}
         self._client_queues_lock = threading.Lock()
         self._clients: Set[web.StreamResponse] = set()
+        # Connections promoted past the probe threshold — the "real" clients
+        # used for the visible count and connect/disconnect logging.
+        self._established: Set[web.StreamResponse] = set()
         self._clients_lock = threading.Lock()
         self._running = False
         self._stream_active = False  # True while engine is streaming
@@ -150,7 +158,7 @@ class HttpRelay(QObject):
     @property
     def client_count(self) -> int:
         with self._clients_lock:
-            return len(self._clients)
+            return len(self._established)
 
     def set_stream_active(self, active: bool) -> None:
         """Mark whether the stream engine is actively producing audio."""
@@ -236,6 +244,7 @@ class HttpRelay(QObject):
                 pass
         with self._clients_lock:
             self._clients.clear()
+            self._established.clear()
         with self._client_queues_lock:
             self._client_queues.clear()
 
@@ -353,18 +362,42 @@ class HttpRelay(QObject):
         # Send WAV header (44 bytes)
         await response.write(WAV_HEADER)
 
-        # Create per-client queue
+        # Create per-client queue. The connection starts as an unconfirmed
+        # "probe": it is served audio but NOT counted or logged until it
+        # outlives ESTABLISHED_AFTER_S. Short-lived availability checks
+        # (e.g. mAirList polling the URL every ~15s) never get promoted, so
+        # they no longer spam the log with connect/disconnect pairs.
         client_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
         with self._client_queues_lock:
             self._client_queues[response] = client_queue
         with self._clients_lock:
             self._clients.add(response)
-            count = len(self._clients)
-        self.client_count_changed.emit(count)
-        self.log_message.emit(f"Client connected ({count} total)")
+
+        peer = request.remote or "?"
+        user_agent = request.headers.get("User-Agent", "?")
+        connect_time = time.monotonic()
+        established = False
 
         try:
             while self._running:
+                # Promote to a real client once it outlives a probe.
+                if not established and (
+                    time.monotonic() - connect_time >= ESTABLISHED_AFTER_S
+                ):
+                    with self._clients_lock:
+                        # Guard against a concurrent stop() that already
+                        # cleared the sets — don't resurrect a count on shutdown.
+                        if self._running:
+                            established = True
+                            self._established.add(response)
+                            count = len(self._established)
+                    if established:
+                        self.client_count_changed.emit(count)
+                        self.log_message.emit(
+                            f"Client connected ({count} total) — {peer} "
+                            f"UA={user_agent}"
+                        )
+
                 try:
                     chunk = await asyncio.wait_for(
                         client_queue.get(), timeout=0.5
@@ -383,17 +416,24 @@ class HttpRelay(QObject):
                 self._client_queues.pop(response, None)
             with self._clients_lock:
                 self._clients.discard(response)
-                count = len(self._clients)
-            self.client_count_changed.emit(count)
-            self.log_message.emit(
-                f"Client disconnected ({count} total)"
-            )
+                was_established = response in self._established
+                self._established.discard(response)
+                count = len(self._established)
+            # Only real clients affect the visible count / log. Probes are
+            # silent so the UI no longer looks like it's flapping.
+            if was_established:
+                self.client_count_changed.emit(count)
+                duration = time.monotonic() - connect_time
+                self.log_message.emit(
+                    f"Client disconnected ({count} total) — {peer} "
+                    f"after {duration:.0f}s"
+                )
 
         return response
 
     async def _handle_status(self, request: web.Request) -> web.Response:
         with self._clients_lock:
-            client_count = len(self._clients)
+            client_count = len(self._established)
         return web.json_response({
             "status": "running",
             "format": "pcm_s16le_48000_stereo",
