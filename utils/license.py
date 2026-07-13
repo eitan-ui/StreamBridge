@@ -232,39 +232,39 @@ def verify_activation_code(email: str, code: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def _check_machine_in_supabase(username: str, machine_id: str) -> str | None:
-    """Check if this machine is the active one. Returns None if OK, or error message."""
-    field = "email" if "@" in username else "username"
-    query_val = urllib.parse.quote(username.strip().lower())
-    result = _supabase_request(
-        "GET",
-        f"licenses?{field}=eq.{query_val}&select=machine_id,machine_name,active"
-    )
+    """Check if this machine is the active one. Returns None if OK, or error message.
 
-    if result is None:
-        return None  # Network error — allow offline use
+    Goes through the `check-license` Edge Function (service_role) instead of
+    direct REST, so the `licenses` table stays locked down — the publishable key
+    that ships in the app has no access to it. See supabase_migration_v5_lockdown.sql.
 
-    if len(result) == 0:
-        return "License not found in server"
+    The Edge Function answers HTTP 200 for every logical outcome
+    ({"valid": true} or {"valid": false, "error": ...}). Any network/server
+    failure (connection error or HTTP 5xx) is treated as transient and returns
+    None, so the app keeps working offline.
+    """
+    url = f"{_SUPABASE_URL}/functions/v1/check-license"
+    body = json.dumps({
+        "username": username.strip().lower(),
+        "machine_id": machine_id,
+        "machine_name": platform.node(),
+    }).encode()
+    headers = {
+        "apikey": _SUPABASE_KEY,
+        "Authorization": f"Bearer {_SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+        logger.warning("check-license call failed: %s", e)
+        return None  # Network/server error — allow offline use
 
-    if not result[0].get("active", True):
-        return "License has been deactivated. Contact support."
-
-    stored_machine_id = result[0].get("machine_id", "")
-    stored_machine_name = result[0].get("machine_name", "")
-
-    if stored_machine_id and stored_machine_id != machine_id:
-        return (
-            f"License is active on another computer: {stored_machine_name}\n"
-            f"Deactivate it there first, or re-activate here."
-        )
-
-    # Update last_seen
-    _supabase_request(
-        "PATCH",
-        f"licenses?{field}=eq.{query_val}",
-        {"last_seen": "now()"}
-    )
-    return None
+    if result.get("valid"):
+        return None
+    return result.get("error") or "License validation failed"
 
 
 def is_activated() -> bool:
@@ -341,6 +341,13 @@ def save_activation(username: str, activation_code: str) -> tuple[bool, str]:
     """Save activation code for a username (legacy HMAC flow).
 
     Returns (success, error_message).
+
+    WARNING: after supabase_migration_v5_lockdown.sql the `licenses` table is no
+    longer writable with the publishable key, so the Supabase GET/PATCH/POST
+    calls below will fail for normal users. This path is only invoked by the
+    gitignored admin tool `generate_license.py`; new licenses should be issued
+    with service_role tooling (see admin_users.py). The GUI uses the email flow
+    (request_activation_code / verify_activation_code) and never calls this.
     """
     if not username.strip():
         return False, "Enter your name"

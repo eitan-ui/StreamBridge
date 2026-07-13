@@ -10,3 +10,4 @@ venv/
 .env
 .superpowers/
 generate_license.py
+supabase/.temp/
