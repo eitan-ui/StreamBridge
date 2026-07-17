@@ -91,6 +91,7 @@ class SilenceAutoStopConfig:
     tone_stop_stream: bool = False        # Stop stream on tone auto-stop (False = keep running)
     window_start_min: int = 0   # minute of hour to start allowing NEXT (0 = top of hour)
     window_end_min: int = 7     # minute of hour to stop allowing NEXT
+    block_top_of_hour: bool = False  # if True, suppress ALL mAirList auto-stop commands during minute 0 (HH:00)
     disable_from_day: int = 4   # 0=Mon..6=Sun, 4=Friday
     disable_from_hour: int = 14
     disable_to_day: int = 5     # 5=Saturday

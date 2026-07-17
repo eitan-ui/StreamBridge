@@ -582,7 +582,11 @@ class MainWindow(QMainWindow):
 
                 # Check disabled period (e.g., Friday 14:00 to Saturday 17:00)
                 in_disabled = self._is_in_disabled_period(now, cfg)
-                if in_disabled:
+                if cfg.block_top_of_hour and minute == 0:
+                    # First minute of the hour: mAirList runs its own hourly
+                    # transition, so a NEXT here skips items. Suppress all commands.
+                    self._add_log("mAirList: skipped (primer minuto de la hora)")
+                elif in_disabled:
                     self._add_log(f"mAirList: skipped (disabled period)")
                 elif cfg.window_start_min <= minute <= cfg.window_end_min:
                     actions = self._mairlist_api.execute_auto_stop_actions(detection_type)

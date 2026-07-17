@@ -268,6 +268,19 @@ class SettingsDialog(FramelessDialog):
         window_row.addWidget(self._window_end_spin)
         actions_form.addRow("Time window:", window_row)
 
+        self._block_top_of_hour_check = QCheckBox(
+            "No enviar comandos a mAirList en el primer minuto de la hora (HH:00)"
+        )
+        self._block_top_of_hour_check.setChecked(
+            self._config.silence.auto_stop.block_top_of_hour
+        )
+        self._block_top_of_hour_check.setToolTip(
+            "En el minuto 0, mAirList hace su propia transición de hora. "
+            "Con esto activado, StreamBridge no envía NEXT/STOP/DELETE durante "
+            "ese minuto para no saltear ítems."
+        )
+        actions_form.addRow(self._block_top_of_hour_check)
+
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
         disable_row = QHBoxLayout()
@@ -1023,6 +1036,7 @@ class SettingsDialog(FramelessDialog):
         self._config.silence.auto_stop.trigger_mairlist = self._trigger_mairlist_check.isChecked()
         self._config.silence.auto_stop.window_start_min = self._window_start_spin.value()
         self._config.silence.auto_stop.window_end_min = self._window_end_spin.value()
+        self._config.silence.auto_stop.block_top_of_hour = self._block_top_of_hour_check.isChecked()
         self._config.silence.auto_stop.disable_from_day = self._disable_from_day.currentData()
         self._config.silence.auto_stop.disable_from_hour = self._disable_from_hour.value()
         self._config.silence.auto_stop.disable_to_day = self._disable_to_day.currentData()
