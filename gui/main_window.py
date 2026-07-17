@@ -585,7 +585,7 @@ class MainWindow(QMainWindow):
                 if cfg.block_top_of_hour and minute == 0:
                     # First minute of the hour: mAirList runs its own hourly
                     # transition, so a NEXT here skips items. Suppress all commands.
-                    self._add_log("mAirList: skipped (primer minuto de la hora)")
+                    self._add_log("mAirList: skipped (first minute of the hour)")
                 elif in_disabled:
                     self._add_log(f"mAirList: skipped (disabled period)")
                 elif cfg.window_start_min <= minute <= cfg.window_end_min:

@@ -269,15 +269,15 @@ class SettingsDialog(FramelessDialog):
         actions_form.addRow("Time window:", window_row)
 
         self._block_top_of_hour_check = QCheckBox(
-            "No enviar comandos a mAirList en el primer minuto de la hora (HH:00)"
+            "Don't send mAirList commands during the first minute of the hour (HH:00)"
         )
         self._block_top_of_hour_check.setChecked(
             self._config.silence.auto_stop.block_top_of_hour
         )
         self._block_top_of_hour_check.setToolTip(
-            "En el minuto 0, mAirList hace su propia transición de hora. "
-            "Con esto activado, StreamBridge no envía NEXT/STOP/DELETE durante "
-            "ese minuto para no saltear ítems."
+            "At minute 0, mAirList runs its own hourly transition. When enabled, "
+            "StreamBridge won't send NEXT/STOP/DELETE during that minute so items "
+            "are not skipped."
         )
         actions_form.addRow(self._block_top_of_hour_check)
 
