@@ -18,6 +18,12 @@ BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
 SILENCE_FRAME = b"\x00" * (BYTES_PER_SECOND // 100)  # 10ms = 1920 bytes
 PCM_CHUNK_SIZE = 3840  # 20ms of audio (48000 * 2 * 2 / 50)
 
+# A /stream connection that lives shorter than this is treated as an
+# availability probe (e.g. mAirList polling the URL every ~16s and closing
+# immediately). It is still counted like any client, but it is not logged,
+# to avoid connect/disconnect log spam.
+ESTABLISHED_AFTER_S = 3.0
+
 
 def _make_wav_header(sample_rate=48000, channels=2, bits=16) -> bytes:
     """Static 44-byte WAV header for streaming (indefinite length)."""
@@ -361,31 +367,35 @@ class HttpRelay(QObject):
             self._clients.add(response)
             count = len(self._clients)
         self.client_count_changed.emit(count)
-        peer = request.remote or "?"
-        user_agent = request.headers.get("User-Agent", "?")
-        connect_time = time.monotonic()
-        self.log_message.emit(
-            f"Client connected ({count} total) — {peer} UA={user_agent}"
-        )
 
-        # DIAGNOSTIC: record why the connection ends and how long it lived.
-        reason = "running-stopped"
+        # Suppress log spam from availability probes: every connection is still
+        # counted (so client_count — used to gate mAirList commands — is
+        # unchanged), but we only LOG a connection once it outlives a probe.
+        # Short-lived checks (mAirList polling the URL every ~16s) stay silent.
+        connect_time = time.monotonic()
+        logged = False
+
         try:
             while self._running:
+                if not logged and (
+                    time.monotonic() - connect_time >= ESTABLISHED_AFTER_S
+                ):
+                    logged = True
+                    with self._clients_lock:
+                        count = len(self._clients)
+                    self.log_message.emit(f"Client connected ({count} total)")
                 try:
                     chunk = await asyncio.wait_for(
                         client_queue.get(), timeout=0.5
                     )
                     if chunk is None:
                         # Stream not active — close connection so player advances
-                        reason = "None-sentinel (stream_active=False)"
                         break
                     await response.write(chunk)
                 except asyncio.TimeoutError:
                     continue
                 except (ConnectionResetError, ConnectionError,
-                        ConnectionAbortedError, BrokenPipeError) as e:
-                    reason = f"conn-error {type(e).__name__}"
+                        ConnectionAbortedError, BrokenPipeError):
                     break
         finally:
             with self._client_queues_lock:
@@ -394,11 +404,10 @@ class HttpRelay(QObject):
                 self._clients.discard(response)
                 count = len(self._clients)
             self.client_count_changed.emit(count)
-            duration = time.monotonic() - connect_time
-            self.log_message.emit(
-                f"Client disconnected ({count} total) — "
-                f"lived {duration:.2f}s, reason={reason}"
-            )
+            # Only log the disconnect for connections we logged as connected —
+            # short-lived availability probes stay silent.
+            if logged:
+                self.log_message.emit(f"Client disconnected ({count} total)")
 
         return response
 
